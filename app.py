@@ -178,7 +178,12 @@ def _error_status_code(message: str) -> int:
         return 502
     if any(
         marker in lowered
-        for marker in ("ingestion failed", "data directory", "no .txt or .md files")
+        for marker in (
+            "ingestion failed",
+            "retrieval failed",
+            "data directory",
+            "no .txt or .md files",
+        )
     ):
         return 503
     return 500

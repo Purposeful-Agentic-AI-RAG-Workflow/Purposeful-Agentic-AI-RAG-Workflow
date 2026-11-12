@@ -104,6 +104,26 @@ def test_service_error_uses_502_with_structured_error(client, monkeypatch):
     }
 
 
+def test_retrieval_error_uses_503_with_structured_error(client, monkeypatch):
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+    monkeypatch.setattr(
+        api.pipeline,
+        "run_pipeline",
+        lambda _query, **_kwargs: {
+            "status": "error",
+            "error": "retrieval failed: knowledge base is empty",
+        },
+    )
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "error",
+        "error": "retrieval failed: knowledge base is empty",
+    }
+
+
 @pytest.mark.parametrize(
     "payload",
     [
