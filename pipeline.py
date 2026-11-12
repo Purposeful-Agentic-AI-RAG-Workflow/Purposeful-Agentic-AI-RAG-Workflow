@@ -206,7 +206,7 @@ def run_pipeline(
     try:
         chunks = _get_knowledge_base()
         if not chunks:
-            return {"status": "insufficient_evidence", "action_items": []}
+            return {"status": "error", "error": "retrieval failed: knowledge base is empty"}
 
         scored = score_chunks(query, chunks, synonyms=synonyms)
         heap_candidates = [
