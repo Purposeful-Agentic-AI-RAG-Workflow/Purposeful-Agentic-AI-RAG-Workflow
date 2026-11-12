@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import unicodedata
 from collections import defaultdict
@@ -145,6 +146,57 @@ def _read_file(path: Path) -> str:
         raise IngestionError(path, f"unreadable file ({error})") from error
 
 
+def _ingest_file(path: Path, doc_id: str, max_chars: int) -> list[Chunk]:
+    source_text = _read_file(path)
+    if not source_text.strip():
+        raise IngestionError(path, "file is empty")
+
+    cleaned = clean_text(source_text)
+    if not cleaned:
+        raise IngestionError(path, "file contains no usable text after cleaning")
+
+    chunks: list[Chunk] = []
+    duplicate_counts: defaultdict[str, int] = defaultdict(int)
+    for section, chunk_text in _paragraph_chunks(cleaned, max_chars):
+        digest = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()[:16]
+        occurrence = duplicate_counts[digest]
+        duplicate_counts[digest] += 1
+        chunks.append(
+            Chunk(
+                doc_id=doc_id,
+                chunk_id=f"chunk-{digest}-{occurrence:02d}",
+                section=section,
+                text=chunk_text,
+            )
+        )
+
+    if not chunks:
+        raise IngestionError(path, "file contains no usable paragraphs")
+    return chunks
+
+
+def ingest_files(paths: Iterable[str | Path], max_chars: int = 1200) -> list[Chunk]:
+    """Ingest an explicit set of .txt/.md files without reading unrelated files."""
+    if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars <= 0:
+        raise ValueError("max_chars must be a positive integer")
+    files = sorted({Path(path).resolve() for path in paths}, key=lambda path: str(path).casefold())
+    if not files:
+        raise IngestionError(Path("."), "no files were provided")
+
+    for path in files:
+        if path.suffix.lower() not in {".txt", ".md"}:
+            raise IngestionError(path, "only .txt and .md files are supported")
+        if not path.is_file():
+            raise IngestionError(path, "path does not refer to a file")
+
+    common_root = Path(os.path.commonpath([str(path.parent) for path in files]))
+    chunks: list[Chunk] = []
+    for path in files:
+        doc_id = path.relative_to(common_root).as_posix()
+        chunks.extend(_ingest_file(path, doc_id, max_chars))
+    return chunks
+
+
 def ingest_directory(data_dir: str | Path = "data", max_chars: int = 1200) -> list[Chunk]:
     """Ingest all .txt/.md files under a directory into stable paragraph chunks.
 
@@ -170,31 +222,7 @@ def ingest_directory(data_dir: str | Path = "data", max_chars: int = 1200) -> li
 
     chunks: list[Chunk] = []
     for path in files:
-        source_text = _read_file(path)
-        if not source_text.strip():
-            raise IngestionError(path, "file is empty")
-
-        cleaned = clean_text(source_text)
-        if not cleaned:
-            raise IngestionError(path, "file contains no usable text after cleaning")
-
         doc_id = path.relative_to(root).as_posix()
-        duplicate_counts: defaultdict[str, int] = defaultdict(int)
-        for section, chunk_text in _paragraph_chunks(cleaned, max_chars):
-            digest = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()[:16]
-            occurrence = duplicate_counts[digest]
-            duplicate_counts[digest] += 1
-            chunk_id = f"chunk-{digest}-{occurrence:02d}"
-            chunks.append(
-                Chunk(
-                    doc_id=doc_id,
-                    chunk_id=chunk_id,
-                    section=section,
-                    text=chunk_text,
-                )
-            )
-
-        if not any(chunk.doc_id == doc_id for chunk in chunks):
-            raise IngestionError(path, "file contains no usable paragraphs")
+        chunks.extend(_ingest_file(path, doc_id, max_chars))
 
     return chunks
