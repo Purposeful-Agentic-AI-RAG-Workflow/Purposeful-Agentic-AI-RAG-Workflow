@@ -36,6 +36,65 @@ def test_root_returns_service_health_metadata(client):
     }
 
 
+def test_status_reports_missing_model_configuration_without_values(client, monkeypatch):
+    for name in ("RAG_LLM_ENDPOINT", "RAG_LLM_MODEL", "RAG_LLM_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+    response = client.get("/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "model_configured": False,
+        "missing_variables": [
+            "RAG_LLM_ENDPOINT",
+            "RAG_LLM_MODEL",
+            "RAG_LLM_API_KEY",
+        ],
+    }
+
+
+def test_status_reports_configured_without_exposing_values(client, monkeypatch):
+    values = {
+        "RAG_LLM_ENDPOINT": "https://model.example.test/v1/chat/completions",
+        "RAG_LLM_MODEL": "test-model",
+        "RAG_LLM_API_KEY": "test-secret-value",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    response = client.get("/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "model_configured": True,
+        "missing_variables": [],
+    }
+    assert all(value not in response.text for value in values.values())
+
+
+def test_startup_logs_configuration_names_but_not_values(monkeypatch, caplog):
+    values = {
+        "RAG_LLM_ENDPOINT": "https://model.example.test/v1/chat/completions",
+        "RAG_LLM_MODEL": "test-model",
+        "RAG_LLM_API_KEY": "startup-secret-value",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(api.pipeline, "_KNOWLEDGE_BASE", [])
+    caplog.set_level("INFO", logger="app")
+
+    with TestClient(api.app):
+        pass
+
+    assert "Model configuration ready" in caplog.text
+    assert "RAG_LLM_ENDPOINT" in caplog.text
+    assert "RAG_LLM_MODEL" in caplog.text
+    assert "RAG_LLM_API_KEY" in caplog.text
+    assert all(value not in caplog.text for value in values.values())
+
+
 def test_supported_query_returns_cited_action_item(client):
     feedback_path = api.DATA_DIR / "feedback_batch_1.txt"
     chunks = ingest_files([feedback_path])
@@ -111,7 +170,53 @@ def test_service_error_uses_502_with_structured_error(client, monkeypatch):
     assert response.status_code == 502
     assert response.json() == {
         "status": "error",
-        "error": "model request failed: simulated upstream outage",
+        "error": (
+            "Model request failed; verify the server-side endpoint, model, API key, "
+            "and network configuration."
+        ),
+    }
+
+
+def test_model_error_response_redacts_upstream_body_and_secret(client, monkeypatch):
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+    secret = "dummy-secret-never-return-this"
+    monkeypatch.setattr(
+        api.pipeline,
+        "run_pipeline",
+        lambda _query, **_kwargs: {
+            "status": "error",
+            "error": (
+                f"model endpoint returned HTTP 401: Authorization: Bearer {secret}\n"
+                "Traceback (most recent call last)"
+            ),
+        },
+    )
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "status": "error",
+        "error": "Model endpoint returned HTTP 401; verify the configured endpoint, model, and API key.",
+    }
+    assert secret not in response.text
+    assert "Traceback" not in response.text
+
+
+def test_missing_model_configuration_error_is_clear_and_safe(client, monkeypatch):
+    for name in ("RAG_LLM_ENDPOINT", "RAG_LLM_MODEL", "RAG_LLM_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+
+    response = client.post("/process", json={"query": "potholes on Mwangaza Road"})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "status": "error",
+        "error": (
+            "Model configuration is missing required variables: "
+            "RAG_LLM_ENDPOINT, RAG_LLM_MODEL, RAG_LLM_API_KEY"
+        ),
     }
 
 
@@ -131,7 +236,7 @@ def test_retrieval_error_uses_503_with_structured_error(client, monkeypatch):
     assert response.status_code == 503
     assert response.json() == {
         "status": "error",
-        "error": "retrieval failed: knowledge base is empty",
+        "error": "Retrieval failed; check the uploaded documents and server configuration.",
     }
 
 
