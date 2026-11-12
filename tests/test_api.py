@@ -19,10 +19,21 @@ def client(monkeypatch):
         api.app.state.llm_client = None
 
 
-def test_healthz_returns_ok(client):
-    response = client.get("/healthz")
+@pytest.mark.parametrize("route", ["/healthz", "/health"])
+def test_health_routes_return_ok(client, route):
+    response = client.get(route)
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_root_returns_service_health_metadata(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "wananchi-actions",
+        "status": "ok",
+        "health": "/healthz",
+    }
 
 
 def test_supported_query_returns_cited_action_item(client):
