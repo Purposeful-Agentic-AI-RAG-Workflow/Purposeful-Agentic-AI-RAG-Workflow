@@ -5,6 +5,9 @@ from topk_heap import TopKHeap, Candidate
 
 def main() -> None:
     heap = TopKHeap(3)
+    print("construct TopKHeap(K=3)")
+    print(f"  heap: {heap.heap}")
+    print(f"  valid heap: {heap.is_heap()}")
     candidates: list[Candidate] = [
         ("report-1", "chunk-1", "potholes", 0.62),
         ("report-2", "chunk-1", "water leak", 0.81),
@@ -15,8 +18,18 @@ def main() -> None:
     ]
 
     for candidate in candidates:
+        key = candidate[:2]
+        was_duplicate = key in heap._keys
+        was_full = len(heap.heap) == heap.k
         changed = heap.add(candidate)
-        operation = "insert/replace" if changed else "ignored"
+        if not changed:
+            operation = "ignored"
+        elif was_duplicate:
+            operation = "duplicate update"
+        elif was_full:
+            operation = "root replacement"
+        else:
+            operation = "insert"
         print(f"{operation}: {candidate}")
         print(f"  heap: {heap.heap}")
         print(f"  valid heap: {heap.is_heap()}")

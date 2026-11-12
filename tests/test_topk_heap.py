@@ -1,3 +1,4 @@
+import random
 import math
 
 import pytest
@@ -10,9 +11,16 @@ def baseline(candidates, k):
     for candidate in candidates:
         key = candidate[:2]
         previous = unique.get(key)
-        if previous is None or (-candidate[3], *key) < (-previous[3], *key):
+        if previous is None or (-candidate[3], *key, candidate[2]) < (
+            -previous[3],
+            *key,
+            previous[2],
+        ):
             unique[key] = candidate
-    return sorted(unique.values(), key=lambda item: (-item[3], item[0], item[1]))[:k]
+    return sorted(
+        unique.values(),
+        key=lambda item: (-item[3], item[0], item[1], item[2]),
+    )[:k]
 
 
 def test_k_one_matches_full_sort():
@@ -48,6 +56,12 @@ def test_non_finite_scores_are_rejected(score):
         select_top_k([("doc", "chunk", "section", score)], 1)
 
 
+@pytest.mark.parametrize("score", ["0.5", None, True, 1 + 2j])
+def test_non_numeric_scores_are_rejected(score):
+    with pytest.raises(TypeError, match="real number"):
+        select_top_k([("doc", "chunk", "section", score)], 1)
+
+
 def test_duplicate_ids_retain_the_best_version():
     candidates = [
         ("doc", "chunk", "old section", 0.4),
@@ -55,6 +69,22 @@ def test_duplicate_ids_retain_the_best_version():
         ("doc", "chunk", "updated section", 0.9),
     ]
     assert select_top_k(candidates, 2) == baseline(candidates, 2)
+
+
+def test_equal_score_duplicates_and_shuffled_inputs_are_deterministic():
+    candidates = [
+        ("doc-1", "chunk-1", "z-section", 0.9),
+        ("doc-1", "chunk-1", "a-section", 0.9),
+        ("doc-2", "chunk-1", "roads", 0.9),
+        ("doc-3", "chunk-1", "water", 0.7),
+        ("doc-4", "chunk-1", "waste", 0.8),
+    ]
+    expected = baseline(candidates, 3)
+    randomizer = random.Random(42)
+    for _ in range(50):
+        shuffled = candidates.copy()
+        randomizer.shuffle(shuffled)
+        assert select_top_k(shuffled, 3) == expected
 
 
 def test_ties_at_k_boundary_use_doc_then_chunk_id():
@@ -87,6 +117,7 @@ def test_heap_invariant_after_inserts_replacements_and_duplicate_updates():
         ("c", "1", "waste", 0.5),
         ("d", "1", "roads", 0.9),
         ("a", "1", "roads revised", 0.95),
+        ("e", "1", "waste", 0.1),
     ]:
         heap.add(candidate)
         assert heap.is_heap()

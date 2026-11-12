@@ -10,9 +10,9 @@ Candidate: TypeAlias = tuple[str, str, str, float]
 CandidateKey: TypeAlias = tuple[str, str]
 
 
-def _key(candidate: Candidate) -> tuple[float, str, str]:
-    doc_id, chunk_id, _, score = candidate
-    return (-score, doc_id, chunk_id)
+def _key(candidate: Candidate) -> tuple[float, str, str, str]:
+    doc_id, chunk_id, section, score = candidate
+    return (-score, doc_id, chunk_id, section)
 
 
 def _is_worse(left: Candidate, right: Candidate) -> bool:
@@ -77,7 +77,11 @@ class TopKHeap:
             index = worst
 
     def add(self, candidate: Candidate) -> bool:
-        """Insert or update a candidate; return whether the retained heap changed."""
+        """Insert or update a candidate; return whether the retained heap changed.
+
+        For duplicate IDs, keep the higher score; equal-score duplicates keep the
+        lexicographically smaller section so the result is independent of input order.
+        """
         candidate = self._validate(candidate)
         key = (candidate[0], candidate[1])
 

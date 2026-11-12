@@ -22,13 +22,18 @@ def main() -> None:
         candidates = make_candidates(n)
         for k in (5, 50):
             start = perf_counter()
-            select_top_k(candidates, k)
+            heap_result = select_top_k(candidates, k)
             heap_ms = (perf_counter() - start) * 1_000
 
             start = perf_counter()
-            sorted(candidates, key=lambda item: (-item[3], item[0], item[1]))[:k]
+            sort_result = sorted(
+                candidates,
+                key=lambda item: (-item[3], item[0], item[1], item[2]),
+            )[:k]
             sort_ms = (perf_counter() - start) * 1_000
 
+            if heap_result != sort_result:
+                raise AssertionError(f"heap and full-sort results differ for n={n}, K={k}")
             print(f"{n:>8} {k:>4} {heap_ms:>12.3f} {sort_ms:>16.3f}")
 
 
