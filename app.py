@@ -78,8 +78,18 @@ app = FastAPI(
 
 
 @app.get("/healthz")
+@app.get("/health")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "wananchi-actions",
+        "status": "ok",
+        "health": "/healthz",
+    }
 
 
 def _safe_upload_name(filename: str | None) -> str:
