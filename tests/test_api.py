@@ -26,14 +26,11 @@ def test_health_routes_return_ok(client, route):
     assert response.json() == {"status": "ok"}
 
 
-def test_root_returns_service_health_metadata(client):
+def test_root_returns_html_page(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {
-        "service": "wananchi-actions",
-        "status": "ok",
-        "health": "/healthz",
-    }
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<title>Wananchi Actions</title>" in response.text
 
 
 def test_status_reports_missing_model_configuration_without_values(client, monkeypatch):

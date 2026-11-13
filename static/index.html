@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f4">
+  <title>Wananchi Actions</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #17231d;
+      background: #f5f7f4;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #f5f7f4;
+    }
+
+    main {
+      width: min(100% - 2rem, 820px);
+      margin: 0 auto;
+      padding: 3rem 0 4rem;
+    }
+
+    header { margin-bottom: 2rem; }
+
+    h1 {
+      margin: 0 0 .45rem;
+      color: #164b35;
+      font-size: clamp(2rem, 7vw, 3rem);
+      letter-spacing: -.04em;
+    }
+
+    .subtitle { margin: 0; color: #53645a; line-height: 1.6; }
+
+    .model-status {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      margin-top: 1rem;
+      padding: .4rem .7rem;
+      border: 1px solid #d5ded7;
+      border-radius: 999px;
+      background: #fff;
+      color: #35463b;
+      font-size: .9rem;
+    }
+
+    .model-status::before {
+      width: .55rem;
+      height: .55rem;
+      border-radius: 50%;
+      background: #85938a;
+      content: "";
+    }
+
+    .model-status[data-configured="true"]::before { background: #25834d; }
+    .model-status[data-configured="false"]::before { background: #c27b13; }
+
+    .panel, .action-card {
+      border: 1px solid #dfe6e0;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 5px 20px rgb(23 35 29 / 4%);
+    }
+
+    .panel { padding: clamp(1rem, 4vw, 1.5rem); }
+
+    label { display: block; margin-bottom: .55rem; font-weight: 650; }
+
+    textarea {
+      display: block;
+      width: 100%;
+      min-height: 112px;
+      resize: vertical;
+      padding: .85rem 1rem;
+      border: 1px solid #bac9bd;
+      border-radius: 10px;
+      color: inherit;
+      background: #fff;
+      font: inherit;
+      line-height: 1.5;
+    }
+
+    textarea:focus, button:focus-visible {
+      outline: 3px solid #85c7a2;
+      outline-offset: 2px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .65rem;
+      margin-top: 1rem;
+    }
+
+    button {
+      min-height: 42px;
+      padding: .55rem .9rem;
+      border: 1px solid #b9c9bd;
+      border-radius: 9px;
+      color: #234936;
+      background: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { background: #edf5ef; }
+
+    button.primary {
+      border-color: #17613e;
+      color: #fff;
+      background: #17613e;
+    }
+
+    button.primary:hover { background: #124e32; }
+    button:disabled { cursor: wait; opacity: .65; }
+
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .55rem;
+      margin-top: 1.2rem;
+    }
+
+    .examples-label {
+      width: 100%;
+      margin-bottom: .05rem;
+      color: #53645a;
+      font-size: .9rem;
+      font-weight: 650;
+    }
+
+    .examples button {
+      min-height: 38px;
+      font-size: .88rem;
+      text-align: left;
+    }
+
+    .results { margin-top: 2rem; }
+
+    .results-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 1rem;
+    }
+
+    h2 { margin: 0; color: #234936; font-size: 1.35rem; }
+
+    .badge {
+      display: inline-block;
+      padding: .3rem .65rem;
+      border-radius: 999px;
+      font-size: .82rem;
+      font-weight: 750;
+    }
+
+    .badge[data-status="ok"] { color: #14532d; background: #dcfce7; }
+    .badge[data-status="insufficient_evidence"] { color: #854d0e; background: #fef3c7; }
+    .badge[data-status="conflict"] { color: #7c2d12; background: #ffedd5; }
+    .badge[data-status="error"] { color: #991b1b; background: #fee2e2; }
+
+    .message, .error-box {
+      margin: 0 0 1rem;
+      padding: .9rem 1rem;
+      border-radius: 10px;
+      line-height: 1.55;
+    }
+
+    .message { color: #45554a; background: #eaf0eb; }
+    .error-box { border: 1px solid #fecaca; color: #991b1b; background: #fef2f2; }
+
+    .action-card { margin-top: 1rem; padding: 1.2rem; }
+
+    .action-card h3 {
+      margin: 0 0 .85rem;
+      color: #164b35;
+      font-size: 1.15rem;
+      text-transform: capitalize;
+    }
+
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+      gap: .85rem 1.2rem;
+    }
+
+    .field-label, .citation-label {
+      display: block;
+      margin-bottom: .2rem;
+      color: #66746a;
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .field-value, .citation p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
+    .summary { grid-column: 1 / -1; }
+    .citation-list { margin: 1.2rem 0 0; padding: 0; list-style: none; }
+    .citation { margin-top: .75rem; padding: .9rem; border-radius: 10px; background: #f4f7f4; }
+    .citation-meta { margin-bottom: .65rem !important; color: #405047; font-size: .88rem; }
+    .citation details { margin-top: .7rem; }
+    .citation summary { color: #17613e; font-weight: 650; cursor: pointer; }
+    .source-text { margin-top: .55rem !important; white-space: pre-wrap; }
+    [hidden] { display: none !important; }
+
+    @media (max-width: 520px) {
+      main { width: min(100% - 1.25rem, 820px); padding-top: 2rem; }
+      .controls .primary { width: 100%; }
+      .examples button { flex: 1 1 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Wananchi Actions</h1>
+      <p class="subtitle">Turn local feedback into evidence-backed action items.</p>
+      <div id="model-status" class="model-status" role="status">model configured: checking</div>
+    </header>
+
+    <section class="panel" aria-labelledby="query-label">
+      <form id="query-form">
+        <label id="query-label" for="query">What would you like to ask about?</label>
+        <textarea id="query" name="query" maxlength="1000" required placeholder="Describe a local issue or ask a question"></textarea>
+        <div class="controls">
+          <button class="primary" id="submit-button" type="submit">Submit</button>
+        </div>
+      </form>
+      <div class="examples" aria-label="Example questions">
+        <span class="examples-label">Try an example</span>
+        <button type="button" data-query="What action is needed for the potholes on Mwangaza Road near Kifaru Market?">Mwangaza Road potholes</button>
+        <button type="button" data-query="What has been reported about water supply in Kayole?">Kayole water</button>
+        <button type="button" data-query="What is the county's budget for road repairs this year?">County road-repair budget</button>
+      </div>
+    </section>
+
+    <section class="results" aria-labelledby="results-title" aria-live="polite">
+      <div class="results-heading">
+        <h2 id="results-title">Results</h2>
+        <span id="result-badge" class="badge" hidden></span>
+      </div>
+      <div id="result-message" class="message" hidden></div>
+      <div id="error-box" class="error-box" role="alert" hidden></div>
+      <div id="action-items"></div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("query-form");
+    const queryInput = document.getElementById("query");
+    const submitButton = document.getElementById("submit-button");
+    const modelStatus = document.getElementById("model-status");
+    const resultBadge = document.getElementById("result-badge");
+    const resultMessage = document.getElementById("result-message");
+    const errorBox = document.getElementById("error-box");
+    const actionItems = document.getElementById("action-items");
+
+    function setStatus(status) {
+      resultBadge.textContent = status.replaceAll("_", " ");
+      resultBadge.dataset.status = status;
+      resultBadge.hidden = false;
+    }
+
+    function clearResults() {
+      actionItems.replaceChildren();
+      resultMessage.textContent = "";
+      resultMessage.hidden = true;
+      errorBox.textContent = "";
+      errorBox.hidden = true;
+    }
+
+    function appendField(container, label, value, extraClass) {
+      const field = document.createElement("div");
+      if (extraClass) field.className = extraClass;
+      const fieldLabel = document.createElement("span");
+      fieldLabel.className = "field-label";
+      fieldLabel.textContent = label;
+      const fieldValue = document.createElement("p");
+      fieldValue.className = "field-value";
+      fieldValue.textContent = value == null ? "" : String(value);
+      field.append(fieldLabel, fieldValue);
+      container.append(field);
+    }
+
+    function renderCitation(citation) {
+      const listItem = document.createElement("li");
+      listItem.className = "citation";
+      const identifiers = document.createElement("p");
+      identifiers.className = "citation-meta";
+      identifiers.textContent = `Document: ${citation.doc_id ?? "—"} · Chunk: ${citation.chunk_id ?? "—"}`;
+      const excerptLabel = document.createElement("span");
+      excerptLabel.className = "citation-label";
+      excerptLabel.textContent = "Excerpt";
+      const excerpt = document.createElement("p");
+      excerpt.textContent = citation.excerpt == null ? "" : String(citation.excerpt);
+      listItem.append(identifiers, excerptLabel, excerpt);
+
+      const sourceText = citation.source_text ?? citation.full_text ?? citation.chunk_text ?? citation.text;
+      if (typeof sourceText === "string" && sourceText.length > 0) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "Show full source chunk";
+        const fullText = document.createElement("p");
+        fullText.className = "source-text";
+        fullText.textContent = sourceText;
+        details.append(summary, fullText);
+        listItem.append(details);
+      }
+      return listItem;
+    }
+
+    function renderActionItem(item) {
+      const card = document.createElement("article");
+      card.className = "action-card";
+      const title = document.createElement("h3");
+      title.textContent = item.category == null ? "Action item" : String(item.category);
+      const fields = document.createElement("div");
+      fields.className = "fields";
+      appendField(fields, "Location", item.location);
+      appendField(fields, "Priority", item.priority);
+      appendField(fields, "Suggested department", item.suggested_department);
+      appendField(fields, "Summary", item.summary, "summary");
+      card.append(title, fields);
+
+      const citations = document.createElement("ul");
+      citations.className = "citation-list";
+      const citationsHeading = document.createElement("span");
+      citationsHeading.className = "field-label";
+      citationsHeading.textContent = "Citations";
+      card.append(citationsHeading);
+      if (Array.isArray(item.citations)) {
+        item.citations.forEach((citation) => citations.append(renderCitation(citation)));
+      }
+      card.append(citations);
+      return card;
+    }
+
+    function showError(message) {
+      setStatus("error");
+      errorBox.textContent = message;
+      errorBox.hidden = false;
+    }
+
+    async function submitQuery(query) {
+      clearResults();
+      setStatus("loading");
+      submitButton.disabled = true;
+      submitButton.textContent = "Working…";
+
+      try {
+        const response = await fetch("/process", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query })
+        });
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          showError(`The server returned an unreadable response (HTTP ${response.status}).`);
+          return;
+        }
+
+        if (!response.ok || payload.status === "error") {
+          showError(payload.error || `The request failed (HTTP ${response.status}).`);
+          return;
+        }
+
+        if (!["ok", "insufficient_evidence", "conflict"].includes(payload.status)) {
+          showError("The server returned an unexpected response status.");
+          return;
+        }
+
+        setStatus(payload.status);
+        if (payload.status === "insufficient_evidence") {
+          resultMessage.textContent = "There is not enough supporting evidence in the available documents to answer this question.";
+          resultMessage.hidden = false;
+          return;
+        }
+        if (payload.status === "conflict") {
+          resultMessage.textContent = "The available documents contain conflicting information, so the response needs human review.";
+          resultMessage.hidden = false;
+        }
+
+        if (Array.isArray(payload.action_items)) {
+          payload.action_items.forEach((item) => actionItems.append(renderActionItem(item)));
+        }
+      } catch {
+        showError("Could not reach the service. Check that the app is running and try again.");
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Submit";
+      }
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const query = queryInput.value.trim();
+      if (query) submitQuery(query);
+    });
+
+    document.querySelectorAll("[data-query]").forEach((button) => {
+      button.addEventListener("click", () => {
+        queryInput.value = button.dataset.query;
+        submitQuery(queryInput.value);
+      });
+    });
+
+    fetch("/status")
+      .then((response) => {
+        if (!response.ok) throw new Error("Status request failed");
+        return response.json();
+      })
+      .then((payload) => {
+        const configured = payload.model_configured === true;
+        modelStatus.textContent = `model configured: ${configured ? "yes" : "no"}`;
+        modelStatus.dataset.configured = String(configured);
+      })
+      .catch(() => {
+        modelStatus.textContent = "model configured: unavailable";
+      });
+  </script>
+</body>
+</html>
