@@ -52,7 +52,7 @@ def ingest_documents(paths: Iterable[str | Path]) -> int:
 def _get_knowledge_base() -> list[Chunk]:
     global _KNOWLEDGE_BASE
     if _KNOWLEDGE_BASE is None:
-        _KNOWLEDGE_BASE = ingest_directory("data")
+        _KNOWLEDGE_BASE = ingest_directory(Path(__file__).resolve().parent / "data")
     return _KNOWLEDGE_BASE
 
 

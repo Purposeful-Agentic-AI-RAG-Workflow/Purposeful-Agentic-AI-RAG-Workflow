@@ -156,6 +156,18 @@ def test_retrieval_failure_returns_explicit_error_without_output(monkeypatch):
     assert "action_items" not in result
 
 
+def test_default_data_directory_is_resolved_relative_to_pipeline_file(monkeypatch, tmp_path):
+    import pipeline
+
+    monkeypatch.setattr(pipeline, "_KNOWLEDGE_BASE", None)
+    monkeypatch.chdir(tmp_path)
+
+    chunks = pipeline._get_knowledge_base()
+
+    assert chunks
+    assert any("Mwangaza Road" in chunk.text for chunk in chunks)
+
+
 def test_output_caps_items_and_summary_length(tmp_path):
     source = tmp_path / "feedback.txt"
     source.write_text("Pothole on Main Street.", encoding="utf-8")

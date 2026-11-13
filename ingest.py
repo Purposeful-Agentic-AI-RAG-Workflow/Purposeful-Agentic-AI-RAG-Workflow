@@ -197,13 +197,20 @@ def ingest_files(paths: Iterable[str | Path], max_chars: int = 1200) -> list[Chu
     return chunks
 
 
-def ingest_directory(data_dir: str | Path = "data", max_chars: int = 1200) -> list[Chunk]:
+def ingest_directory(
+    data_dir: str | Path | None = None,
+    max_chars: int = 1200,
+) -> list[Chunk]:
     """Ingest all .txt/.md files under a directory into stable paragraph chunks.
 
     A file that cannot be read, is empty, or contains no usable text fails ingestion
     explicitly instead of being silently skipped. Source files are read-only.
     """
-    root = Path(data_dir)
+    root = (
+        Path(data_dir)
+        if data_dir is not None
+        else Path(__file__).resolve().parent / "data"
+    )
     if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars <= 0:
         raise ValueError("max_chars must be a positive integer")
     if not root.exists() or not root.is_dir():
