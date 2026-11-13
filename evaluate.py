@@ -11,10 +11,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from ingest import ingest_files
 from llm_client import MockLLMClient, call_model
 from models import Candidate, Chunk
+import pipeline
 from pipeline import ingest_documents, run_pipeline
-from scoring import tokenize
+from scoring import score_chunks, tokenize
+from topk_heap import select_top_k
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
@@ -68,6 +71,27 @@ def _parse_selected(prompt: str) -> list[Candidate]:
         )
         for record in json.loads(prompt[start:end])
     ]
+
+
+def _selected_chunks(query: str, chunks: list[Chunk]) -> list[Candidate]:
+    scored = score_chunks(query, chunks)
+    selected_ids = select_top_k(
+        [
+            (
+                candidate.chunk.doc_id,
+                candidate.chunk.chunk_id,
+                candidate.chunk.section,
+                candidate.score,
+            )
+            for candidate in scored
+        ],
+        pipeline.DEFAULT_TOP_K,
+    )
+    by_id = {
+        (candidate.chunk.doc_id, candidate.chunk.chunk_id): candidate
+        for candidate in scored
+    }
+    return [by_id[(doc_id, chunk_id)] for doc_id, chunk_id, _, _ in selected_ids]
 
 
 def _messages(selected: list[Candidate]) -> list[tuple[str, str, Candidate]]:
@@ -182,8 +206,13 @@ def _mock_answer(query: str, selected: list[Candidate]) -> str:
     return json.dumps({"status": "ok", "action_items": [action]}, ensure_ascii=False)
 
 
-def _run_case(case: dict[str, Any], use_real_model: bool) -> tuple[dict[str, Any], list[Candidate]]:
+def _run_case(
+    case: dict[str, Any],
+    use_real_model: bool,
+    chunks: list[Chunk],
+) -> tuple[dict[str, Any], list[Candidate]]:
     prompts: list[str] = []
+    selected = _selected_chunks(case["question"], chunks)
 
     def invoke(prompt: str, *, system_prompt: str) -> str:
         prompts.append(prompt)
@@ -194,7 +223,18 @@ def _run_case(case: dict[str, Any], use_real_model: bool) -> tuple[dict[str, Any
         return mock(prompt, system_prompt=system_prompt)
 
     result = run_pipeline(case["question"], llm=invoke)
-    selected = _parse_selected(prompts[0]) if prompts else []
+    if prompts:
+        sent_to_model = _parse_selected(prompts[0])
+        selected_keys = {
+            (candidate.chunk.doc_id, candidate.chunk.chunk_id)
+            for candidate in selected
+        }
+        sent_keys = {
+            (candidate.chunk.doc_id, candidate.chunk.chunk_id)
+            for candidate in sent_to_model
+        }
+        if selected_keys != sent_keys:
+            raise RuntimeError("evaluation retrieval differs from chunks sent to the model")
     return result, selected
 
 
@@ -211,6 +251,22 @@ def _expected_status(case: dict[str, Any]) -> str:
 
 def _render_cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _citation_source_ids(
+    citation: dict[str, Any],
+    selected: list[Candidate],
+) -> set[str]:
+    excerpt_ids = set(SOURCE_ID_PATTERN.findall(citation.get("excerpt", "")))
+    if excerpt_ids:
+        return excerpt_ids
+    key = (citation.get("doc_id"), citation.get("chunk_id"))
+    return {
+        source_id
+        for source_id, message, candidate in _messages(selected)
+        if (candidate.chunk.doc_id, candidate.chunk.chunk_id) == key
+        and citation.get("excerpt", "") in message
+    }
 
 
 def main() -> None:
@@ -239,23 +295,19 @@ def main() -> None:
     if not data_files:
         raise RuntimeError(f"No .txt or .md evaluation data found in {DATA_DIR}")
     ingest_documents(data_files)
+    chunks = ingest_files(data_files)
 
     cases = _read_gold_set()
     rows = []
     supported_count = 0
     for case in cases:
-        result, selected = _run_case(case, use_real_model)
+        result, selected = _run_case(case, use_real_model, chunks)
         retrieved_ids = sorted({
             source_id
             for candidate in selected
             for source_id in SOURCE_ID_PATTERN.findall(candidate.chunk.text)
         })
-        cited_ids = sorted({
-            source_id
-            for item in result.get("action_items", [])
-            for citation in item.get("citations", [])
-            for source_id in SOURCE_ID_PATTERN.findall(citation["excerpt"])
-        })
+        cited_ids: set[str] = set()
         selected_by_key = {
             (candidate.chunk.doc_id, candidate.chunk.chunk_id): candidate.chunk.text
             for candidate in selected
@@ -269,10 +321,13 @@ def main() -> None:
                 text = selected_by_key.get((citation["doc_id"], citation["chunk_id"]))
                 if text is None or citation["excerpt"] not in text:
                     issues.append("citation is not an exact excerpt from a selected chunk")
+                else:
+                    attributed_ids = _citation_source_ids(citation, selected)
+                    cited_ids.update(attributed_ids)
+                    if expected_ids and not expected_ids.intersection(attributed_ids):
+                        issues.append("citation cannot be attributed to an expected source message")
         if expected_ids and not expected_ids.issubset(set(retrieved_ids)):
             issues.append("one or more expected source IDs were not retrieved")
-        if expected_ids and cited_ids and not set(cited_ids).issubset(expected_ids):
-            issues.append("citation references a source outside the gold references")
         claimed_ids = {
             source_id for item in action_items
             for source_id in SOURCE_ID_PATTERN.findall(item.get("summary", ""))
@@ -289,7 +344,7 @@ def main() -> None:
             issues.append("ok status has no action item")
         if result["status"] != "ok" and action_items:
             issues.append("non-ok status contains action items")
-        if result["status"] == "ok" and expected_ids and not expected_ids.issubset(set(cited_ids)):
+        if result["status"] == "ok" and expected_ids and not expected_ids.issubset(cited_ids):
             issues.append("one or more expected source IDs were not cited")
 
         supported = not issues and status_matches and expected_ids.issubset(set(retrieved_ids))
@@ -314,7 +369,7 @@ def main() -> None:
         "",
         f"Run mode: **{mode}**.",
         "",
-        "The default mock synthesizes from selected chunks only; it does not read expected answers or gold source IDs. Gold references are used only for scoring. Automated checks cover retrieval IDs, expected status, citation membership, and exact excerpts; they cannot establish semantic entailment, which requires human review.",
+        "The default mock synthesizes from selected chunks only; it does not read expected answers or gold source IDs. Gold references are used only for scoring. Automated checks cover retrieval IDs, expected status, citation membership, source attribution, and exact excerpts; they cannot establish semantic entailment, which requires human review.",
         "",
         "| Question | Expected source IDs | Retrieved IDs | Status | Supported | Unsupported claims or wrong citations |",
         "|---|---|---|---|---|---|",
