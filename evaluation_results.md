@@ -2,7 +2,7 @@
 
 Run mode: **evidence-only mock client**.
 
-The default mock synthesizes from selected chunks only; it does not read expected answers or gold source IDs. Gold references are used only for scoring. Automated checks cover retrieval IDs, expected status, citation membership, and exact excerpts; they cannot establish semantic entailment, which requires human review.
+The default mock synthesizes from selected chunks only; it does not read expected answers or gold source IDs. Gold references are used only for scoring. Automated checks cover retrieval IDs, expected status, citation membership, source attribution, and exact excerpts; they cannot establish semantic entailment, which requires human review.
 
 | Question | Expected source IDs | Retrieved IDs | Status | Supported | Unsupported claims or wrong citations |
 |---|---|---|---|---|---|
