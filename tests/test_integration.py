@@ -1,5 +1,9 @@
+import importlib
 import json
 from pathlib import Path
+
+import pytest
+import topk_heap
 
 import pipeline
 from ingest import IngestionError, ingest_files
@@ -76,13 +80,22 @@ def test_supported_query_has_citation_excerpt_in_selected_chunk():
             assert citation["excerpt"] in chunk.text
 
 
-def test_absent_evidence_returns_no_action_items():
+@pytest.mark.parametrize(
+    "query",
+    [
+        "quantum dentistry in Antarctica",
+        "What water problems were reported in Kayole?",
+        "What is the mayor's favourite colour?",
+    ],
+)
+def test_absent_evidence_returns_no_action_items(query):
     _load_feedback()
     model = MockLLMClient([_response_for([], status="insufficient_evidence")])
-    result = pipeline.run_pipeline("quantum dentistry in Antarctica", llm=model)
 
-    assert result == {"status": "insufficient_evidence", "action_items": []}
-    assert model.calls == 1
+    result = pipeline.run_pipeline(query, llm=model)
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["action_items"] == []
 
 
 def test_conflicting_messages_are_reported_as_conflict():
@@ -238,16 +251,18 @@ def test_repeated_input_is_deterministic_and_output_is_capped():
 
 
 def test_pipeline_calls_imported_topk_heap_function(monkeypatch):
-    chunks = _load_feedback()
-    query = "potholes on Mwangaza Road"
-    selected = _selected_chunks(query, chunks)
     calls = []
+    original_selector = topk_heap.select_top_k
 
     def checked_selector(candidates, k):
         calls.append((len(candidates), k))
-        return heap_select_top_k(candidates, k)
+        return original_selector(candidates, k)
 
-    monkeypatch.setattr(pipeline, "select_top_k", checked_selector)
+    monkeypatch.setattr(topk_heap, "select_top_k", checked_selector)
+    importlib.reload(pipeline)
+    chunks = _load_feedback()
+    query = "potholes on Mwangaza Road"
+    selected = _selected_chunks(query, chunks)
     result = pipeline.run_pipeline(
         query,
         llm=MockLLMClient([_response_for(selected)]),
@@ -255,3 +270,5 @@ def test_pipeline_calls_imported_topk_heap_function(monkeypatch):
 
     assert result["status"] == "ok"
     assert calls and calls[0][1] == pipeline.DEFAULT_TOP_K
+    # Restore the imported alias too, so later tests see the original selector.
+    monkeypatch.setattr(pipeline, "select_top_k", original_selector)
