@@ -41,22 +41,30 @@ lexicographically lower section), then sorts unique candidates using the same
 best-first tie order and takes K. The script compares the complete returned lists,
 including metadata, and raises an assertion if any pair differs.
 
-Timings are milliseconds from one local run; they are measurements, not performance
-guarantees. Rerun on the target machine for its timings.
+Timings below are milliseconds from one run on 2026-11-13. Environment: HP EliteBook
+Folio 1040 G3, Intel Core i7-6600U @ 2.60 GHz, Windows 11 Pro, Python 3.13.7.
+They are measurements, not performance guarantees; rerun on the target machine for
+its timings.
 
 | Input candidates (n) | K | Bounded heap (ms) | Dedup + full sort (ms) | Identical results |
 |---:|---:|---:|---:|:---:|
-| 1,000 | 5 | 9.768 | 2.299 | Yes |
-| 1,000 | 50 | 15.874 | 1.853 | Yes |
-| 10,000 | 5 | 84.269 | 26.091 | Yes |
-| 10,000 | 50 | 88.325 | 21.191 | Yes |
-| 100,000 | 5 | 779.563 | 231.204 | Yes |
-| 100,000 | 50 | 393.891 | 266.683 | Yes |
+| 1,000 | 5 | 25.170 | 6.368 | Yes |
+| 1,000 | 50 | 7.597 | 1.589 | Yes |
+| 10,000 | 5 | 29.337 | 6.897 | Yes |
+| 10,000 | 50 | 23.716 | 6.901 | Yes |
+| 100,000 | 5 | 224.892 | 113.024 | Yes |
+| 100,000 | 50 | 235.442 | 133.608 | Yes |
 
 On this machine, C-optimized Python sorting is faster at these pool sizes. The heap's
 benefit is bounded candidate storage during streaming selection, not lower wall-clock
 time in this particular benchmark. The full-sort baseline materializes and sorts all
 unique candidates, so its storage grows with the input size.
+
+## Pipeline integration
+
+`pipeline.py` imports `select_top_k` from `topk_heap.py` at line 15 and calls it at
+line 221 on the scored candidate list. The pipeline therefore uses the same bounded
+selector tested and benchmarked here rather than a separate selection implementation.
 
 ## Small heap trace
 
