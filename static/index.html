@@ -3,16 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f7f4">
+  <meta name="theme-color" content="#ffffff">
   <title>Wananchi Actions</title>
   <style>
     :root {
       color-scheme: light;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: #17231d;
-      background: #f5f7f4;
+      background: #ffffff;
       font-synthesis: none;
       text-rendering: optimizeLegibility;
+      --page: #ffffff;
+      --surface: #ffffff;
+      --surface-soft: #f4f8f4;
+      --text: #17231d;
+      --muted: #4a5d50;
+      --line: #d9e4dc;
+      --green: #174f37;
+      --green-deep: #103e2b;
+      --green-pale: #f2f8df;
+      --lime: #c5ef32;
+      --shadow: 0 16px 42px rgb(23 35 29 / 8%);
     }
 
     * { box-sizing: border-box; }
@@ -20,58 +31,145 @@
     body {
       margin: 0;
       min-width: 320px;
-      background: #f5f7f4;
+      background: var(--page);
+      color: var(--text);
     }
 
     main {
-      width: min(100% - 2rem, 820px);
+      width: min(100% - 2.5rem, 1120px);
       margin: 0 auto;
-      padding: 3rem 0 4rem;
+      padding: 2rem 0 3rem;
     }
 
-    header { margin-bottom: 2rem; }
+    .hero-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+      align-items: center;
+      gap: clamp(1.5rem, 5vw, 3.5rem);
+      margin-bottom: 2rem;
+      padding: clamp(1.25rem, 4vw, 2.25rem);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background:
+        radial-gradient(ellipse at 98% 0%, rgb(197 239 50 / 14%), transparent 26%),
+        radial-gradient(ellipse at 0% 0%, rgb(221 239 224 / 80%), transparent 58%),
+        var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-copy { min-width: 0; }
+
+    .eyebrow {
+      margin: 0 0 .65rem;
+      color: var(--green);
+      font-size: .76rem;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      display: inline-block;
+      width: .55rem;
+      height: .55rem;
+      margin: 0 .45rem .02rem 0;
+      border-radius: 50%;
+      background: var(--lime);
+      content: "";
+      vertical-align: middle;
+    }
 
     h1 {
-      margin: 0 0 .45rem;
-      color: #164b35;
-      font-size: clamp(2rem, 7vw, 3rem);
+      margin: 0 0 .6rem;
+      color: var(--green);
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
       letter-spacing: -.04em;
+      line-height: 1.05;
     }
 
-    .subtitle { margin: 0; color: #53645a; line-height: 1.6; }
+    .subtitle {
+      max-width: 43rem;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.8vw, 1.12rem);
+      line-height: 1.65;
+    }
 
-    .model-status {
+    .status-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .55rem;
+      margin-top: 1.25rem;
+    }
+
+    .status-chip {
       display: inline-flex;
       align-items: center;
       gap: .45rem;
-      margin-top: 1rem;
-      padding: .4rem .7rem;
-      border: 1px solid #d5ded7;
+      min-height: 34px;
+      padding: .35rem .7rem;
+      border: 1px solid var(--line);
       border-radius: 999px;
-      background: #fff;
-      color: #35463b;
-      font-size: .9rem;
+      background: var(--surface);
+      color: var(--text);
+      font-size: .84rem;
+      font-weight: 650;
     }
 
-    .model-status::before {
-      width: .55rem;
-      height: .55rem;
+    .status-dot {
+      width: .58rem;
+      height: .58rem;
+      flex: 0 0 auto;
       border-radius: 50%;
-      background: #85938a;
-      content: "";
+      background: #68766d;
     }
 
-    .model-status[data-configured="true"]::before { background: #25834d; }
-    .model-status[data-configured="false"]::before { background: #c27b13; }
+    .status-chip[data-state="ok"] .status-dot { background: #187545; }
+    .status-chip[data-state="no"] .status-dot { background: #a45b08; }
+    .status-chip[data-state="error"] .status-dot { background: #ad2e2e; }
+
+    .hero-figure { margin: 0; }
+
+    .hero-photo {
+      display: block;
+      width: 100%;
+      aspect-ratio: 3 / 2;
+      border: 1px solid rgb(23 35 29 / 12%);
+      border-radius: 18px;
+      background: var(--surface-soft);
+      box-shadow: 0 12px 28px rgb(23 35 29 / 16%);
+      object-fit: cover;
+    }
+
+    .hero-figure figcaption {
+      margin-top: .65rem;
+      color: var(--muted);
+      font-size: .82rem;
+      line-height: 1.45;
+    }
 
     .panel, .action-card {
-      border: 1px solid #dfe6e0;
+      border: 1px solid var(--line);
       border-radius: 16px;
-      background: #fff;
-      box-shadow: 0 5px 20px rgb(23 35 29 / 4%);
+      background: var(--surface);
+      box-shadow: 0 8px 26px rgb(23 35 29 / 5%);
     }
 
-    .panel { padding: clamp(1rem, 4vw, 1.5rem); }
+    .panel { padding: clamp(1.1rem, 3vw, 1.75rem); }
+
+    .section-heading {
+      margin: 0 0 .4rem;
+      color: var(--green);
+      font-size: 1.25rem;
+      letter-spacing: -.02em;
+    }
+
+    .section-intro {
+      margin: 0 0 1.1rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
 
     label { display: block; margin-bottom: .55rem; font-weight: 650; }
 
@@ -83,14 +181,14 @@
       padding: .85rem 1rem;
       border: 1px solid #bac9bd;
       border-radius: 10px;
-      color: inherit;
-      background: #fff;
+      color: var(--text);
+      background: var(--surface);
       font: inherit;
       line-height: 1.5;
     }
 
-    textarea:focus, button:focus-visible {
-      outline: 3px solid #85c7a2;
+    textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible {
+      outline: 3px solid #278653;
       outline-offset: 2px;
     }
 
@@ -105,25 +203,25 @@
     button {
       min-height: 42px;
       padding: .55rem .9rem;
-      border: 1px solid #b9c9bd;
+      border: 1px solid #9aafa0;
       border-radius: 9px;
-      color: #234936;
-      background: #fff;
+      color: #174b31;
+      background: var(--surface);
       font: inherit;
       font-weight: 600;
       cursor: pointer;
     }
 
-    button:hover { background: #edf5ef; }
+    button:hover { background: var(--green-pale); }
 
     button.primary {
-      border-color: #17613e;
+      border-color: var(--green);
       color: #fff;
-      background: #17613e;
+      background: var(--green);
     }
 
-    button.primary:hover { background: #124e32; }
-    button:disabled { cursor: wait; opacity: .65; }
+    button.primary:hover { background: var(--green-deep); }
+    button:disabled { cursor: wait; opacity: .7; }
 
     .examples {
       display: flex;
@@ -135,7 +233,7 @@
     .examples-label {
       width: 100%;
       margin-bottom: .05rem;
-      color: #53645a;
+      color: var(--muted);
       font-size: .9rem;
       font-weight: 650;
     }
@@ -146,7 +244,7 @@
       text-align: left;
     }
 
-    .results { margin-top: 2rem; }
+    .results { margin-top: 2.1rem; }
 
     .results-heading {
       display: flex;
@@ -154,6 +252,7 @@
       align-items: center;
       gap: .75rem;
       margin-bottom: 1rem;
+      padding: 0 .1rem;
     }
 
     h2 { margin: 0; color: #234936; font-size: 1.35rem; }
@@ -170,6 +269,7 @@
     .badge[data-status="insufficient_evidence"] { color: #854d0e; background: #fef3c7; }
     .badge[data-status="conflict"] { color: #7c2d12; background: #ffedd5; }
     .badge[data-status="error"] { color: #991b1b; background: #fee2e2; }
+    .badge[data-status="loading"] { color: #314b3b; background: #eaf2eb; }
 
     .message, .error-box {
       margin: 0 0 1rem;
@@ -178,13 +278,75 @@
       line-height: 1.55;
     }
 
-    .message { color: #45554a; background: #eaf0eb; }
-    .error-box { border: 1px solid #fecaca; color: #991b1b; background: #fef2f2; }
+    .message { color: #314b3b; background: #eaf2eb; }
+    .error-box { border: 1px solid #e6aaaa; color: #861f1f; background: #fff0ef; }
 
-    .action-card { margin-top: 1rem; padding: 1.2rem; }
+    .action-card { margin-top: 1rem; padding: clamp(1rem, 3vw, 1.45rem); }
+
+    .card-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: 1.1rem;
+    }
+
+    .category-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: .6rem;
+      padding: .3rem .65rem .3rem .3rem;
+      border: 1px solid #c5dccb;
+      border-radius: 12px;
+      color: #164b35;
+      background: #f4faf5;
+      font-size: 1.12rem;
+      font-weight: 750;
+      text-transform: capitalize;
+    }
+
+    .category-icon {
+      display: grid;
+      width: 2.45rem;
+      height: 2.45rem;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid rgb(197 239 50 / 55%);
+      border-radius: 12px;
+      color: #17613e;
+      background: #f2f8df;
+    }
+
+    .category-icon svg, .empty-icon svg {
+      width: 1.4rem;
+      height: 1.4rem;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+    }
+
+    .priority-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: .28rem .7rem;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-size: .82rem;
+      font-weight: 750;
+      text-transform: capitalize;
+    }
+
+    .priority-chip[data-priority="high"] { color: #842525; border-color: #e7b6b2; background: #fff0ee; }
+    .priority-chip[data-priority="medium"] { color: #7a4b08; border-color: #e6cb8c; background: #fff7df; }
+    .priority-chip[data-priority="low"] { color: #1d5a39; border-color: #b7d7c0; background: #eaf6ed; }
+    .priority-chip[data-priority="other"] { color: #354d3d; border-color: var(--line); background: var(--surface-soft); }
 
     .action-card h3 {
-      margin: 0 0 .85rem;
+      margin: 0;
       color: #164b35;
       font-size: 1.15rem;
       text-transform: capitalize;
@@ -199,7 +361,7 @@
     .field-label, .citation-label {
       display: block;
       margin-bottom: .2rem;
-      color: #66746a;
+      color: var(--muted);
       font-size: .8rem;
       font-weight: 700;
       letter-spacing: .04em;
@@ -209,30 +371,132 @@
     .field-value, .citation p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
     .summary { grid-column: 1 / -1; }
     .citation-list { margin: 1.2rem 0 0; padding: 0; list-style: none; }
-    .citation { margin-top: .75rem; padding: .9rem; border-radius: 10px; background: #f4f7f4; }
-    .citation-meta { margin-bottom: .65rem !important; color: #405047; font-size: .88rem; }
+    .citation { margin-top: .75rem; padding: .95rem; border: 1px solid #dfe8e0; border-radius: 12px; background: #f6f9f6; }
+    .citation-meta { margin-bottom: .65rem !important; color: #344a3b; font-size: .88rem; }
     .citation details { margin-top: .7rem; }
     .citation summary { color: #17613e; font-weight: 650; cursor: pointer; }
     .source-text { margin-top: .55rem !important; white-space: pre-wrap; }
+    .loading-state, .empty-state {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      margin: 1rem 0;
+      padding: 1.1rem 1.2rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--muted);
+      background: var(--surface);
+      line-height: 1.5;
+    }
+
+    .loading-state[hidden], .empty-state[hidden] { display: none; }
+
+    .spinner {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: 0 0 auto;
+      border: 3px solid #c9d9cc;
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    .empty-state { align-items: flex-start; }
+    .empty-icon {
+      display: grid;
+      width: 2.5rem;
+      height: 2.5rem;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 12px;
+      color: #17613e;
+      background: #e5f1e7;
+    }
+
+    .empty-state p { margin: .15rem 0 0; }
+
+    footer {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: .6rem 1rem;
+      margin-top: 2rem;
+      padding: 1.1rem .2rem 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .82rem;
+      line-height: 1.5;
+    }
+
+    footer a { color: #155e39; font-weight: 650; }
+
     [hidden] { display: none !important; }
 
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 760px) {
+      main { width: min(100% - 1.5rem, 600px); padding-top: 1rem; }
+      .hero-header { grid-template-columns: 1fr; gap: 1.2rem; padding: 1.15rem; }
+      .hero-figure { width: 100%; }
+      .hero-photo { max-height: 320px; }
+    }
+
     @media (max-width: 520px) {
-      main { width: min(100% - 1.25rem, 820px); padding-top: 2rem; }
+      main { width: min(100% - 1.25rem, 600px); padding-top: .65rem; }
+      .hero-header { border-radius: 18px; }
+      .hero-photo { border-radius: 14px; }
+      .controls { align-items: stretch; }
       .controls .primary { width: 100%; }
       .examples button { flex: 1 1 100%; }
+      .results-heading { align-items: flex-start; }
+      footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
     }
   </style>
 </head>
 <body>
   <main>
-    <header>
-      <h1>Wananchi Actions</h1>
-      <p class="subtitle">Turn local feedback into evidence-backed action items.</p>
-      <div id="model-status" class="model-status" role="status">model configured: checking</div>
+    <header class="hero-header">
+      <div class="hero-copy">
+        <p class="eyebrow">Citizen feedback · practical next steps</p>
+        <h1>Wananchi Actions</h1>
+        <p class="subtitle">Turn local feedback into evidence-backed action items for roads, water, and waste.</p>
+        <div class="status-list" aria-label="Service status">
+          <span id="model-status" class="status-chip" data-state="checking" role="status">
+            <span class="status-dot" aria-hidden="true"></span>
+            Model configured: checking
+          </span>
+          <span id="api-status" class="status-chip" data-state="checking" role="status">
+            <span class="status-dot" aria-hidden="true"></span>
+            API health: checking
+          </span>
+        </div>
+      </div>
+      <figure class="hero-figure">
+        <img
+          id="hero-photo"
+          class="hero-photo"
+          src="/static/img/hero.jpg"
+          width="549"
+          height="364"
+          alt="County government building with a clock tower beneath a clear blue sky"
+          loading="eager">
+        <figcaption>Built for county offices that turn residents' reports into action.</figcaption>
+      </figure>
     </header>
 
-    <section class="panel" aria-labelledby="query-label">
+    <section class="panel" aria-labelledby="query-heading">
       <form id="query-form">
+        <h2 id="query-heading" class="section-heading">Explore community feedback</h2>
+        <p class="section-intro">Ask about a reported issue. Results are grounded in the available reports.</p>
         <label id="query-label" for="query">What would you like to ask about?</label>
         <textarea id="query" name="query" maxlength="1000" required placeholder="Describe a local issue or ask a question"></textarea>
         <div class="controls">
@@ -252,10 +516,27 @@
         <h2 id="results-title">Results</h2>
         <span id="result-badge" class="badge" hidden></span>
       </div>
+      <div id="loading-state" class="loading-state" role="status" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Searching reports and preparing evidence-backed results…</span>
+      </div>
+      <div id="empty-state" class="empty-state">
+        <span class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6M8 10h.01M16 10h.01"></path>
+          </svg>
+        </span>
+        <p>Start with a question or choose an example to explore the reports.</p>
+      </div>
       <div id="result-message" class="message" hidden></div>
       <div id="error-box" class="error-box" role="alert" hidden></div>
       <div id="action-items"></div>
     </section>
+
+    <footer>
+      <span><a href="https://github.com/sirnickko/Purposeful-Agentic-AI-RAG-Workflow" target="_blank" rel="noopener noreferrer">Project repository</a> · <a href="/healthz">Health check</a> · <a href="/static/img/CREDITS.md">Photo: see static/img/CREDITS.md</a></span>
+      <span>Synthetic data only. Every claim is checked against a source.</span>
+    </footer>
   </main>
 
   <script>
@@ -263,15 +544,27 @@
     const queryInput = document.getElementById("query");
     const submitButton = document.getElementById("submit-button");
     const modelStatus = document.getElementById("model-status");
+    const apiStatus = document.getElementById("api-status");
     const resultBadge = document.getElementById("result-badge");
     const resultMessage = document.getElementById("result-message");
     const errorBox = document.getElementById("error-box");
     const actionItems = document.getElementById("action-items");
+    const loadingState = document.getElementById("loading-state");
+    const emptyState = document.getElementById("empty-state");
+    const heroPhoto = document.getElementById("hero-photo");
 
     function setStatus(status) {
       resultBadge.textContent = status.replaceAll("_", " ");
       resultBadge.dataset.status = status;
       resultBadge.hidden = false;
+    }
+
+    function setIndicator(element, label, value, state) {
+      const dot = document.createElement("span");
+      dot.className = "status-dot";
+      dot.setAttribute("aria-hidden", "true");
+      element.replaceChildren(dot, document.createTextNode(`${label}: ${value}`));
+      element.dataset.state = state;
     }
 
     function clearResults() {
@@ -280,6 +573,25 @@
       resultMessage.hidden = true;
       errorBox.textContent = "";
       errorBox.hidden = true;
+    }
+
+    function categoryIcon(category) {
+      const value = String(category ?? "").toLowerCase();
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      if (value.includes("water") || value.includes("sanitation")) {
+        path.setAttribute("d", "M12 3C9.2 7.1 6 10.4 6 14a6 6 0 0 0 12 0c0-3.6-3.2-6.9-6-11Zm-2.8 12.2a3 3 0 0 0 3 3");
+      } else if (value.includes("waste") || value.includes("environment")) {
+        path.setAttribute("d", "M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m3 3v7m6-7v7");
+      } else if (value.includes("building") || value.includes("department")) {
+        path.setAttribute("d", "M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6M8 10h.01M16 10h.01");
+      } else {
+        path.setAttribute("d", "M5 21 9 3m6 0 4 18M3 21h18M11 7h2m-3 5h4m-5 5h6");
+      }
+      icon.append(path);
+      return icon;
     }
 
     function appendField(container, label, value, extraClass) {
@@ -325,15 +637,31 @@
     function renderActionItem(item) {
       const card = document.createElement("article");
       card.className = "action-card";
+      const heading = document.createElement("div");
+      heading.className = "card-heading";
       const title = document.createElement("h3");
-      title.textContent = item.category == null ? "Action item" : String(item.category);
+      title.className = "category-tag";
+      const icon = document.createElement("span");
+      icon.className = "category-icon";
+      icon.append(categoryIcon(item.category));
+      const categoryName = document.createElement("span");
+      categoryName.textContent = item.category == null ? "Action item" : String(item.category);
+      title.append(icon, categoryName);
+      const priority = document.createElement("span");
+      priority.className = "priority-chip";
+      const priorityText = item.priority == null ? "Not specified" : String(item.priority);
+      priority.textContent = priorityText;
+      const normalizedPriority = priorityText.toLowerCase();
+      priority.dataset.priority = ["high", "medium", "low"].includes(normalizedPriority)
+        ? normalizedPriority
+        : "other";
+      heading.append(title, priority);
       const fields = document.createElement("div");
       fields.className = "fields";
       appendField(fields, "Location", item.location);
-      appendField(fields, "Priority", item.priority);
       appendField(fields, "Suggested department", item.suggested_department);
       appendField(fields, "Summary", item.summary, "summary");
-      card.append(title, fields);
+      card.append(heading, fields);
 
       const citations = document.createElement("ul");
       citations.className = "citation-list";
@@ -356,15 +684,20 @@
 
     async function submitQuery(query) {
       clearResults();
+      emptyState.hidden = true;
+      loadingState.hidden = false;
       setStatus("loading");
       submitButton.disabled = true;
-      submitButton.textContent = "Working…";
+      submitButton.textContent = "Searching…";
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 30000);
 
       try {
         const response = await fetch("/process", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query })
+          body: JSON.stringify({ query }),
+          signal: controller.signal
         });
         let payload;
         try {
@@ -398,9 +731,15 @@
         if (Array.isArray(payload.action_items)) {
           payload.action_items.forEach((item) => actionItems.append(renderActionItem(item)));
         }
-      } catch {
-        showError("Could not reach the service. Check that the app is running and try again.");
+      } catch (error) {
+        if (error.name === "AbortError") {
+          showError("This request took longer than 30 seconds. Please try again.");
+        } else {
+          showError("Could not reach the service. Check that the app is running and try again.");
+        }
       } finally {
+        window.clearTimeout(timeoutId);
+        loadingState.hidden = true;
         submitButton.disabled = false;
         submitButton.textContent = "Submit";
       }
@@ -419,6 +758,10 @@
       });
     });
 
+    heroPhoto.addEventListener("error", () => {
+      heroPhoto.closest(".hero-figure").hidden = true;
+    }, { once: true });
+
     fetch("/status")
       .then((response) => {
         if (!response.ok) throw new Error("Status request failed");
@@ -426,11 +769,23 @@
       })
       .then((payload) => {
         const configured = payload.model_configured === true;
-        modelStatus.textContent = `model configured: ${configured ? "yes" : "no"}`;
-        modelStatus.dataset.configured = String(configured);
+        setIndicator(modelStatus, "Model configured", configured ? "yes" : "no", configured ? "ok" : "no");
       })
       .catch(() => {
-        modelStatus.textContent = "model configured: unavailable";
+        setIndicator(modelStatus, "Model configured", "unavailable", "error");
+      });
+
+    fetch("/healthz")
+      .then((response) => {
+        if (!response.ok) throw new Error("Health request failed");
+        return response.json();
+      })
+      .then((payload) => {
+        const healthy = payload.status === "ok";
+        setIndicator(apiStatus, "API health", healthy ? "healthy" : "unavailable", healthy ? "ok" : "error");
+      })
+      .catch(() => {
+        setIndicator(apiStatus, "API health", "unavailable", "error");
       });
   </script>
 </body>
