@@ -1,98 +1,117 @@
-# Bounded Citizen Feedback RAG API
+# wananchi-actions
 
-A small Python retrieval-augmented generation prototype for Challenge C / SDG 11.
-It turns citizen feedback about roads, water, and waste into bounded, cited
-action items. The sample data is fictional.
+**Challenge C, Advanced: Purposeful Agentic AI / RAG Workflow**
 
-## Fixed workflow
+**SDG 11 - Sustainable Cities and Communities:** turn fictional citizen feedback
+about roads, water, and waste into concise, cited action items for human review.
+
+This Python prototype demonstrates a bounded retrieval-augmented generation
+(RAG) workflow. It is not a case-management system and does not dispatch public
+works crews.
+
+## Technology
+
+- Python 3.11+
+- FastAPI and Pydantic for the HTTP API and request validation
+- BM25-style lexical scoring and a hand-written bounded binary min-heap
+- An OpenAI-compatible chat-completions endpoint for synthesis
+- Pytest for API, pipeline, ingestion, and heap tests
+
+The dependencies are listed in [`requirements.txt`](requirements.txt). The API
+uses Python's standard-library HTTP client for model requests; it does not select
+a provider or model automatically.
+
+## Fixed pipeline
 
 ```text
-ingest -> chunk -> BM25 score -> bounded top-K heap -> synthesize -> verify citations -> done
+ingest -> chunk -> score -> heap top-K -> synthesize -> cite/verify -> done
 ```
 
-The pipeline sends only selected chunks to the model. Document text is explicitly
-marked as untrusted data and never treated as instructions. A citation must refer
-to a selected `(doc_id, chunk_id)` and its excerpt must occur in that chunk.
+Documents are cleaned and chunked, scored lexically, and streamed through a
+bounded top-K heap. Only the selected chunks are sent to the model, inside a
+delimited untrusted-data block. The model must return JSON; each accepted
+citation must identify a selected chunk and quote an exact excerpt from it.
+Unsupported requests return `insufficient_evidence`; contradictory evidence can
+return `conflict`. Results are for human review.
 
-## Setup
+## Setup, build, and run
 
-Use Python 3.11 or newer:
+Create a virtual environment and install the dependencies from the repository
+root. There is no separate compile or asset-build step.
 
-```bash
+```powershell
 python -m venv .venv
-# Windows PowerShell:
-.venv\Scripts\Activate.ps1
-# macOS/Linux:
-# source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python -m pip install pytest
 ```
 
-Copy `.env.example` to `.env` for local model configuration. `.env` is ignored
-by Git. Do not commit credentials.
+The runtime service listens on port **8000** by default. Start it locally with:
 
-## Run and model configuration
+```powershell
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
+```
 
-The API uses the OpenAI-compatible chat-completions request/response format.
-There is no hosted provider or endpoint default; configure all three required
-values for live model calls:
+The local API base URL is `http://127.0.0.1:8000`. For a hosted container, bind
+to `0.0.0.0` and configure the start command to use the platform's assigned
+port. Confirm the platform's port setting rather than assuming a variable name.
+
+The service ingests the supported files under `data/` at startup when its
+in-memory knowledge base is empty. Optional `/ingest` uploads are saved under
+`data/uploads/` and added to that process's knowledge base. The runtime has no
+database: uploaded files are local filesystem data and may be lost when a host
+rebuilds or replaces its instance. `data/uploads/` is excluded from Git.
+
+## Model configuration
+
+For live synthesis, the service sends OpenAI-compatible chat-completions
+requests to the configured endpoint. Configure the following values in the
+server's environment or secrets manager. For local development, `.env.example`
+lists the variable names; copy it to `.env` and set values privately. `.env` is
+gitignored. Never commit or paste secret values.
 
 | Environment variable | Purpose | Required |
-|---|---|---|
-| `RAG_LLM_ENDPOINT` | Full chat-completions endpoint URL | Yes |
-| `RAG_LLM_MODEL` | Model identifier expected by that endpoint | Yes |
-| `RAG_LLM_API_KEY` | Secret sent as a bearer token | Yes |
-| `RAG_LLM_TIMEOUT` | Request timeout in seconds (default `30`) | No |
-| `RAG_LLM_MAX_RETRIES` | HTTP retry count from 0 to 2 (default `2`) | No |
+|---|---|:---:|
+| `RAG_LLM_ENDPOINT` | Full OpenAI-compatible chat-completions URL | Yes |
+| `RAG_LLM_MODEL` | Model identifier accepted by that endpoint | Yes |
+| `RAG_LLM_API_KEY` | Bearer-token credential | Yes |
+| `RAG_LLM_TIMEOUT` | Request timeout in seconds; default `30` | No |
+| `RAG_LLM_MAX_RETRIES` | HTTP retries, from `0` to `2`; default `2` | No |
 
-Start locally:
+`GET /status` reports whether the required values are present; it does not
+validate the key or confirm that the endpoint is reachable. See
+[`docs/deployment.md`](docs/deployment.md) before configuring a host.
 
-```bash
-uvicorn app:app --host 127.0.0.1 --port 8000
+## API and demonstration sequence
+
+In another PowerShell window:
+
+```powershell
+$base = 'http://127.0.0.1:8000'
 ```
 
-For a platform-provided port, bind to `0.0.0.0` and its configured port variable;
-confirm that platform's exact variable name before deployment.
+### Health and configuration
 
-## API examples
-
-### Health
-
-```bash
-curl http://127.0.0.1:8000/healthz
+```powershell
+Invoke-RestMethod -Uri "$base/healthz"
+Invoke-RestMethod -Uri "$base/status" | ConvertTo-Json -Depth 10
 ```
 
-Response:
+Example health response:
 
 ```json
 {"status":"ok"}
 ```
 
-### Ingest a text file
+### Supported task: Mwangaza Road potholes
 
-```bash
-curl -X POST http://127.0.0.1:8000/ingest \
-  -F "files=@data/feedback_batch_1.txt;type=text/plain"
+```powershell
+$body = @{ query = 'Which department should handle the potholes on Mwangaza Road near Kifaru Market?' } | ConvertTo-Json
+Invoke-RestMethod -Uri "$base/process" -Method Post -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 10
 ```
 
-Response:
-
-```json
-{"status":"ok","file_count":1,"chunk_count":1,"files":["<generated-upload-name>"]}
-```
-
-The exact chunk count depends on file contents and chunk limits. On startup, the
-API attempts to ingest supported files already under `data/` when its knowledge
-base is empty.
-
-### Supported task
-
-```bash
-curl -X POST http://127.0.0.1:8000/process \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Where are the potholes near Kifaru Market, and who should inspect them?"}'
-```
-
-Example response (the model wording can vary):
+Example response (wording and chunk ID vary by model and ingestion run):
 
 ```json
 {
@@ -103,12 +122,12 @@ Example response (the model wording can vary):
       "location": "Mwangaza Road near Kifaru Market",
       "priority": "high",
       "suggested_department": "Roads and Transport Department",
-      "summary": "Inspect the reported potholes and assess the traffic risk.",
+      "summary": "Inspect the reported potholes.",
       "citations": [
         {
           "doc_id": "feedback_batch_1.txt",
           "chunk_id": "<selected-chunk-id>",
-          "excerpt": "potholes on Mwangaza Road near Kifaru Market"
+          "excerpt": "FB-001: The potholes on Mwangaza Road near Kifaru Market are getting bigger every week."
         }
       ]
     }
@@ -116,77 +135,143 @@ Example response (the model wording can vary):
 }
 ```
 
-### Missing evidence
+### No evidence: county road-repair budget
 
-```bash
-curl -X POST http://127.0.0.1:8000/process \
-  -H "Content-Type: application/json" \
-  -d '{"query":"How many litres were lost at a location with no leak report?"}'
+```powershell
+$body = @{ query = "What is the county's budget for road repairs this year?" } | ConvertTo-Json
+Invoke-RestMethod -Uri "$base/process" -Method Post -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 10
 ```
 
-Response:
+Expected response:
 
 ```json
 {"status":"insufficient_evidence","action_items":[]}
 ```
 
-### Service error
+### Conflicting reports: Upendo Estate
 
-With an invalid model key or unavailable configured endpoint:
-
-```json
-{"status":"error","error":"model request failed: ..."}
+```powershell
+$body = @{ query = 'Are there three confirmed consecutive days of water outage at Upendo Estate?' } | ConvertTo-Json
+Invoke-RestMethod -Uri "$base/process" -Method Post -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 10
 ```
 
-The API returns HTTP 502 for model failures, HTTP 503 for ingestion/retrieval
-failures, and HTTP 500 for other internal errors. It does not turn these failures
-into successful-looking action items.
+Expected conflict response when the model recognizes both reports:
+
+```json
+{"status":"conflict","action_items":[]}
+```
+
+The reports are FB-022 and FB-039. Conflict classification is model-generated;
+the application does not independently infer contradictions.
+
+### Prompt-injection message: FB-020
+
+```powershell
+$body = @{ query = 'What is the safety significance of FB-020?' } | ConvertTo-Json
+Invoke-RestMethod -Uri "$base/process" -Method Post -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 10
+```
+
+FB-020 is untrusted citizen content. Review that the model does not follow its
+embedded instruction or disclose private information. Model wording and status
+can vary.
+
+### Service error
+
+With an invalid server-side key or unavailable configured model endpoint, the
+API returns a structured HTTP 502. This PowerShell example captures the status
+and response body without placing a credential in the command:
+
+```powershell
+try {
+    $body = @{ query = 'potholes on Mwangaza Road near Kifaru Market' } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$base/process" -Method Post -ContentType 'application/json' -Body $body -ErrorAction Stop | ConvertTo-Json -Depth 10
+} catch {
+    if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+        "HTTP_STATUS=$([int]$_.Exception.Response.StatusCode)"
+    }
+    if ($_.ErrorDetails.Message) {
+        "BODY=$($_.ErrorDetails.Message)"
+    } else {
+        "ERROR=$($_.Exception.Message)"
+    }
+}
+```
+
+Example sanitized response:
+
+```json
+{"status":"error","error":"Model endpoint returned HTTP 401; verify the configured endpoint, model, and API key."}
+```
+
+The API uses HTTP 502 for model/configuration errors, HTTP 503 for
+ingestion/retrieval errors, and HTTP 500 for other internal failures. Follow
+[`docs/service_error_demo.md`](docs/service_error_demo.md) for the safe hosted
+error demonstration, including restoring the valid key.
 
 ## Tests and evaluation
 
-```bash
+```powershell
 python -m pytest -v
 python benchmark.py
 python trace_topk.py
-python evaluate.py
+python evaluate.py --mock
 ```
 
-`evaluate.py` uses a deterministic mock by default; it uses the real configured
-endpoint when `RAG_LLM_ENDPOINT`, `RAG_LLM_MODEL`, and `RAG_LLM_API_KEY` are all
-present. It writes `evaluation_results.md`. The mock evaluation checks expected
-source retrieval and citation/source IDs, not semantic entailment; review
-`evaluation_results.md` before using its support rate as a model-quality claim.
+`evaluate.py` uses a deterministic evidence-only mock by default. It uses the
+configured real endpoint when all required `RAG_LLM_*` settings are present;
+that may make live model requests. The report is written to
+[`evaluation_results.md`](evaluation_results.md). The mock support rate checks
+retrieval, status, and citation wiring, not independent LLM quality or semantic
+entailment. See [`tests/gold_set.md`](tests/gold_set.md) for the 15 evaluation
+questions.
 
-## Heap and complexity
+## Design and complexity
 
-The bounded binary min-heap retains at most K candidates with the least desirable
-candidate at the root. Selection is O(n log K) for K >= 2 and O(n) for K = 1.
-Final sorting is O(K log K). Heap storage is O(K); the dedup set and position
-index add O(K) storage with expected O(1) hash lookups. The hand-written BM25
-implementation tokenizes in O(T) over corpus tokens and scores in O(N * Q)
-expected time for N chunks and Q query tokens. See
-[`notes/complexity.md`](notes/complexity.md) for measured timings, baseline
-comparison, and a trace.
+- The top-K selector is a hand-written binary min-heap with the least desirable
+  retained candidate at the root. It does not use `heapq` or a library top-K
+  routine.
+- Candidates are deduplicated by `(doc_id, chunk_id)`. Ties are deterministic:
+  higher score, then lower document ID, then lower chunk ID.
+- For K >= 2 selection is O(n log K); for K = 1 it is O(n). Sorting the final
+  selected results is O(K log K). Heap and dedup/index storage are O(K).
+- BM25 tokenization is expected O(T) for T corpus tokens; scoring is expected
+  O(N * Q) for N chunks and Q query tokens.
+- Only verified excerpts from selected chunks are retained in an `ok` result.
+  Model and retrieval failures are returned explicitly rather than converted to
+  success-shaped action items.
 
-## Limitations
+See [`notes/complexity.md`](notes/complexity.md) for the machine-specific
+benchmark, full-sort comparison, complexity detail, and trace.
 
-- BM25 is lexical; synonyms are manually configured and the scorer does not
-  provide semantic embeddings.
-- Conflict classification is requested from the model using selected text; the
-  application does not independently prove that two statements contradict.
-- Citation membership and exact excerpt text are validated, but citation checks
-  do not prove that the action summary is semantically entailed by the excerpt.
-- The default chunking strategy uses character-bounded paragraph/message text;
-  larger chunks may contain several feedback records.
-- `evaluation_results.md` in mock mode is a deterministic wiring/source-coverage
-  check, not an assessment of an external model.
-- The repository has no verified public deployment URL yet. Do not expose
-  uploaded sensitive data; this prototype does not implement authentication or
-  durable multi-tenant storage.
+## Security and known limitations
 
-## Team roles
+- Retrieved document text is untrusted data, placed inside a delimited prompt
+  block; it must never be treated as instructions.
+- Keep credentials server-side in environment settings. Do not put keys in
+  source, screenshots, command history, or committed files.
+- The sample feedback is fictional. Do not upload sensitive citizen data.
+- BM25 is lexical retrieval, not semantic search; synonym expansion is limited
+  and manually configured.
+- The model is responsible for synthesis and conflict classification. Citation
+  checks prove selected-chunk membership and exact excerpt matching, not that
+  every natural-language claim is entailed.
+- Paragraph chunking is character-bounded. A long record can span chunks, and
+  selecting one fragment may omit adjacent context.
+- There is no authentication, database, durable multi-tenant storage, or
+  independent human-approval workflow in this prototype.
+- The mock evaluation is a pipeline/source-coverage check. Its support rate must
+  not be presented as a real model-quality score.
 
-- **Person A:** heap, ingestion, scoring, citations, pipeline, API, deployment,
-  and project documentation.
-- **Person B:** fictional feedback data, department/source notes, gold-set
-  questions, and evaluation review.
+## Team
+
+- **Person A - [Name]:** heap, ingestion, scoring, citations, pipeline, API,
+  deployment, and integration tests.
+- **Person B - [Name]:** fictional feedback data, source/department notes,
+  gold-set questions, and evaluation review.
+
+## Submission placeholders
+
+- **AI-tool disclosure:** TODO
+- **Alumni Contribution note:** TODO
+- **Backup video link:** TODO
+- **Deployed commit ID:** TODO
