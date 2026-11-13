@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 import app as api
 import llm_client
-from llm_client import MockLLMClient
+from llm_client import LLMClientError, MockLLMClient
 from pipeline import ingest_documents
 from scoring import score_chunks
 from ingest import ingest_files
@@ -174,11 +174,12 @@ def test_service_error_uses_502_with_structured_error(client, monkeypatch):
             "Model failure: verify the server-side endpoint, model, API key, "
             "and network configuration."
         ),
-        "error_type": "LLMClientError",
+        "error_type": "model_failure",
+        "reason": "request_failed",
     }
 
 
-@pytest.mark.parametrize("provider_status", [401, 404, 429])
+@pytest.mark.parametrize("provider_status", [400, 401, 404, 429])
 def test_model_http_errors_return_safe_502(client, monkeypatch, provider_status):
     ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
     monkeypatch.setenv("RAG_LLM_ENDPOINT", "https://model.example.test/chat/completions")
@@ -203,10 +204,117 @@ def test_model_http_errors_return_safe_502(client, monkeypatch, provider_status)
     assert response.status_code == 502
     result = response.json()
     assert result["status"] == "error"
-    assert result["error_type"] == "LLMClientError"
-    assert f"Model failure: endpoint returned HTTP {provider_status}" in result["error"]
+    assert result["error_type"] == f"http_{provider_status}"
+    assert f"HTTP {provider_status}" in result["error"]
+    assert result["reason"] in {
+        "bad_request",
+        "authentication_failed",
+        "model_not_found",
+        "rate_limit",
+    }
     assert secret not in response.text
     assert "never-return-this-key" not in response.text
+
+
+def test_model_timeout_returns_typed_502(client, monkeypatch):
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+    monkeypatch.setenv("RAG_LLM_ENDPOINT", "https://model.example.test/chat/completions")
+    monkeypatch.setenv("RAG_LLM_MODEL", "test-model")
+    monkeypatch.setenv("RAG_LLM_API_KEY", "never-return-this-key")
+
+    def timeout(*_args, **_kwargs):
+        raise TimeoutError("private timeout detail")
+
+    monkeypatch.setattr(llm_client, "urlopen", timeout)
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 502
+    assert response.json()["error_type"] == "timeout"
+    assert response.json()["reason"] == "timeout"
+    assert "private timeout detail" not in response.text
+
+
+def test_empty_model_content_returns_typed_502(client, monkeypatch):
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+    monkeypatch.setenv("RAG_LLM_ENDPOINT", "https://model.example.test/chat/completions")
+    monkeypatch.setenv("RAG_LLM_MODEL", "test-model")
+    monkeypatch.setenv("RAG_LLM_API_KEY", "never-return-this-key")
+    monkeypatch.setattr(
+        llm_client,
+        "urlopen",
+        lambda *_args, **_kwargs: BytesIO(
+            b'{"choices":[{"message":{"content":""}}]}'
+        ),
+    )
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 502
+    assert response.json()["error_type"] == "empty_content"
+    assert response.json()["reason"] == "empty_content"
+    assert "never-return-this-key" not in response.text
+
+
+def test_schema_mismatch_returns_typed_502(client, monkeypatch):
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+    monkeypatch.setenv("RAG_LLM_ENDPOINT", "https://model.example.test/chat/completions")
+    monkeypatch.setenv("RAG_LLM_MODEL", "test-model")
+    monkeypatch.setenv("RAG_LLM_API_KEY", "test-key")
+    monkeypatch.setenv("RAG_LLM_MAX_RETRIES", "2")
+    attempts = []
+
+    def invalid_schema_response(*_args, **_kwargs):
+        attempts.append(None)
+        return BytesIO(b'{"choices":[{"message":{"content":"{\\"extra\\":true}"}}]}')
+
+    monkeypatch.setattr(llm_client, "urlopen", invalid_schema_response)
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 502
+    assert response.json()["error_type"] == "schema_mismatch"
+    assert response.json()["reason"] == "schema_mismatch"
+    assert len(attempts) == 3
+
+
+def test_api_model_attempts_are_bounded_by_shared_request_budget(client, monkeypatch):
+    ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
+    monkeypatch.setenv("RAG_LLM_ENDPOINT", "https://model.example.test/chat/completions")
+    monkeypatch.setenv("RAG_LLM_MODEL", "gemini-3.5-flash-lite")
+    monkeypatch.setenv("RAG_LLM_API_KEY", "test-key")
+    monkeypatch.setenv("RAG_LLM_TIMEOUT", "30")
+    monkeypatch.setenv("RAG_LLM_MAX_RETRIES", "2")
+    captured = {}
+
+    def successful_response(request, timeout):
+        captured["timeout"] = timeout
+        captured["payload"] = json.loads(request.data)
+        return BytesIO(
+            b'{"choices":[{"message":{"content":"```json\\n'
+            b'{\\"status\\":\\"insufficient_evidence\\",\\"action_items\\":[]}\\n```"}}],'
+            b'"extra_content":"ignored"}'
+        )
+
+    monkeypatch.setattr(llm_client, "urlopen", successful_response)
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "insufficient_evidence"
+    assert 0 < captured["timeout"] <= api.MODEL_REQUEST_BUDGET_SECONDS
+    assert captured["payload"]["temperature"] == 0
+    assert captured["payload"]["model"] == "gemini-3.5-flash-lite"
+
+
+def test_expired_model_budget_fails_without_sending_request(monkeypatch):
+    model = api._bounded_model_client(deadline=api.time.monotonic() - 1)
+
+    with pytest.raises(LLMClientError) as raised:
+        model("test prompt")
+
+    assert raised.value.error_type == "timeout"
+    assert raised.value.reason == "request_budget_exhausted"
 
 
 def test_invalid_model_response_returns_safe_502(client, monkeypatch):
@@ -226,10 +334,10 @@ def test_invalid_model_response_returns_safe_502(client, monkeypatch):
     assert response.json() == {
         "status": "error",
         "error": (
-            "Model failure: the endpoint returned an invalid response; verify the "
-            "configured model and its OpenAI-compatible response format."
+            "Model failure: provider returned invalid JSON."
         ),
-        "error_type": "LLMResponseError",
+        "error_type": "invalid_json",
+        "reason": "invalid_json",
     }
     assert "private provider output" not in response.text
 
@@ -250,6 +358,7 @@ def test_unclassified_pipeline_error_returns_safe_500_diagnostic(client, monkeyp
     assert result["status"] == "error"
     assert result["error"] == "Internal pipeline error."
     assert result["error_type"] == "PipelineError"
+    assert result["reason"] == "internal_pipeline_error"
     assert len(result["diagnostic_id"]) == 32
     assert private_error not in response.text
     assert private_error not in caplog.text
@@ -268,6 +377,7 @@ def test_unknown_pipeline_status_returns_safe_500_diagnostic(client, monkeypatch
     result = response.json()
     assert result["error"] == "Internal pipeline error."
     assert result["error_type"] == "PipelineError"
+    assert result["reason"] == "invalid_status"
     assert len(result["diagnostic_id"]) == 32
 
 
@@ -289,6 +399,7 @@ def test_unexpected_pipeline_error_returns_safe_diagnostic_and_traceback(
     assert result["status"] == "error"
     assert result["error"] == "Internal pipeline error."
     assert result["error_type"] == "RuntimeError"
+    assert result["reason"] == "unexpected_exception"
     assert len(result["diagnostic_id"]) == 32
     assert secret not in response.text
     assert "Traceback (most recent call last)" in caplog.text
@@ -316,8 +427,9 @@ def test_model_error_response_redacts_upstream_body_and_secret(client, monkeypat
     assert response.status_code == 502
     assert response.json() == {
         "status": "error",
-        "error": "Model failure: endpoint returned HTTP 401; verify the configured endpoint, model, and API key.",
-        "error_type": "LLMClientError",
+        "error": "Model failure: endpoint returned HTTP 401.",
+        "error_type": "http_401",
+        "reason": "authentication_failed",
     }
     assert secret not in response.text
     assert "Traceback" not in response.text
@@ -338,6 +450,7 @@ def test_missing_model_configuration_error_is_clear_and_safe(client, monkeypatch
             "RAG_LLM_ENDPOINT, RAG_LLM_MODEL, RAG_LLM_API_KEY"
         ),
         "error_type": "LLMConfigurationError",
+        "reason": "missing_configuration",
     }
 
 
@@ -359,6 +472,7 @@ def test_retrieval_error_uses_503_with_structured_error(client, monkeypatch):
         "status": "error",
         "error": "Retrieval failed; check the uploaded documents and server configuration.",
         "error_type": "IngestionError",
+        "reason": "retrieval_failed",
     }
 
 

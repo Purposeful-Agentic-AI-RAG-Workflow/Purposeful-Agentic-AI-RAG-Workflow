@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
@@ -16,6 +17,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
+from llm_client import LLMClientError, LLMConfig, call_model
 import pipeline
 from ingest import IngestionError
 from models import Result
@@ -31,6 +33,7 @@ MAX_UPLOAD_FILES = 10
 MAX_FILE_BYTES = 1_000_000
 MAX_TOTAL_UPLOAD_BYTES = 5_000_000
 MAX_QUERY_CHARS = 1_000
+MODEL_REQUEST_BUDGET_SECONDS = 20.0
 _knowledge_base_lock = threading.RLock()
 _REQUIRED_MODEL_ENV = (
     "RAG_LLM_ENDPOINT",
@@ -86,6 +89,35 @@ def _model_configuration() -> tuple[bool, list[str], list[str]]:
     ]
     missing = [name for name in _REQUIRED_MODEL_ENV if name not in configured]
     return not missing, configured, missing
+
+
+def _bounded_model_client(deadline: float | None = None):
+    if deadline is None:
+        deadline = time.monotonic() + MODEL_REQUEST_BUDGET_SECONDS
+    config: LLMConfig | None = None
+
+    def request_model(prompt: str, *, system_prompt: str = "") -> str:
+        nonlocal config
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise LLMClientError(
+                "timeout reason=request_budget_exhausted: model request budget exceeded",
+                error_type="timeout",
+                reason="request_budget_exhausted",
+            )
+        if config is None:
+            config = LLMConfig.from_env()
+        bounded_config = LLMConfig(
+            endpoint=config.endpoint,
+            model=config.model,
+            api_key=config.api_key,
+            timeout_seconds=min(config.timeout_seconds, remaining),
+            # Pipeline schema retries share this deadline; transport retries stay disabled.
+            max_retries=0,
+        )
+        return call_model(prompt, system_prompt=system_prompt, config=bounded_config)
+
+    return request_model
 
 
 @asynccontextmanager
@@ -229,7 +261,7 @@ async def ingest_uploads(
     }
 
 
-def _safe_error_message(message: object) -> tuple[str, int, str]:
+def _safe_error_message(message: object) -> tuple[str, int, str, str]:
     """Return a client-safe error message without upstream bodies or secret values."""
     text = str(message)
     lowered = text.casefold()
@@ -245,28 +277,82 @@ def _safe_error_message(message: object) -> tuple[str, int, str]:
                 f"Model configuration is missing required variables: {', '.join(variable_names)}",
                 502,
                 "LLMConfigurationError",
+                "missing_configuration",
             )
         return (
             "Model configuration is incomplete; check server-side model settings.",
             502,
             "LLMConfigurationError",
+            "missing_configuration",
         )
+    if "rag_llm_timeout" in lowered or "rag_llm_max_retries" in lowered:
+        return (
+            "Model configuration has an invalid timeout or retry setting.",
+            502,
+            "LLMConfigurationError",
+            "invalid_model_settings",
+        )
+
+    error_match = re.search(
+        r"\b(http_\d{3}|invalid_json|schema_mismatch|timeout|empty_content|network_error)\b",
+        lowered,
+    )
+    reason_match = re.search(r"\breason=([a-z0-9_]+)", lowered)
+    if error_match:
+        error_type = error_match.group(1)
+        reason = reason_match.group(1) if reason_match else error_type
+        if error_type.startswith("http_"):
+            status = int(error_type[5:])
+            if status == 429:
+                message_text = "Model failure: provider rate limit (HTTP 429); retry later."
+                reason = "rate_limit"
+            elif status == 404:
+                message_text = "Model failure: model or endpoint was not found (HTTP 404)."
+                reason = "model_not_found"
+            elif status == 401:
+                message_text = "Model failure: provider rejected authentication (HTTP 401)."
+                reason = "authentication_failed"
+            elif status == 400:
+                message_text = "Model failure: provider rejected the request (HTTP 400)."
+                reason = "bad_request"
+            else:
+                message_text = f"Model failure: provider returned HTTP {status}."
+                reason = "timeout" if status == 408 else "provider_error"
+            return message_text, 502, error_type, reason
+        messages = {
+            "invalid_json": "Model failure: provider returned invalid JSON.",
+            "schema_mismatch": "Model failure: response did not match the required schema.",
+            "timeout": "Model failure: request timed out.",
+            "empty_content": "Model failure: response content was empty.",
+            "network_error": "Model failure: could not connect to the model endpoint.",
+        }
+        return messages[error_type], 502, error_type, reason
 
     if any(marker in lowered for marker in ("model request failed", "llm client", "model endpoint")):
         status_match = re.search(r"\bHTTP\s+(\d{3})\b", text, flags=re.IGNORECASE)
         if status_match:
             provider_status = int(status_match.group(1))
+            reason = {
+                400: "bad_request",
+                401: "authentication_failed",
+                403: "permission_denied",
+                404: "model_not_found",
+                408: "timeout",
+                425: "temporary_provider_failure",
+                429: "rate_limit",
+            }.get(provider_status, "provider_error")
             return (
-                f"Model failure: endpoint returned HTTP {provider_status}; verify the "
-                "configured endpoint, model, and API key.",
+                f"Model failure: endpoint returned HTTP {provider_status}.",
                 502,
-                "LLMClientError",
+                f"http_{provider_status}",
+                reason,
             )
         return (
             "Model failure: verify the server-side endpoint, model, API key, "
             "and network configuration.",
             502,
-            "LLMClientError",
+            "model_failure",
+            "request_failed",
         )
 
     if any(marker in lowered for marker in ("ingestion failed", "retrieval failed")):
@@ -274,7 +360,10 @@ def _safe_error_message(message: object) -> tuple[str, int, str]:
             "Retrieval failed; check the uploaded documents and server configuration.",
             503,
             "IngestionError",
+            "retrieval_failed",
         )
+    if "invalid json" in lowered or "valid json" in lowered:
+        return "Model failure: provider returned invalid JSON.", 502, "invalid_json", "invalid_json"
     if any(
         marker in lowered
         for marker in (
@@ -290,21 +379,20 @@ def _safe_error_message(message: object) -> tuple[str, int, str]:
             "Model failure: the endpoint returned an invalid response; verify the "
             "configured model and its OpenAI-compatible response format.",
             502,
-            "LLMResponseError",
+            "schema_mismatch",
+            "schema_mismatch",
         )
-    return "Internal pipeline error.", 500, "PipelineError"
+    return "Internal pipeline error.", 500, "PipelineError", "internal_pipeline_error"
 
 
 @app.post("/process", response_model=None)
 def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | Result:
     model = getattr(request.app.state, "llm_client", None)
+    if model is None:
+        model = _bounded_model_client()
     try:
         with _knowledge_base_lock:
-            result = (
-                pipeline.run_pipeline(payload.query, llm=model)
-                if model is not None
-                else pipeline.run_pipeline(payload.query)
-            )
+            result = pipeline.run_pipeline(payload.query, llm=model)
     except Exception as error:
         diagnostic_id = uuid.uuid4().hex
         error_type = type(error).__name__
@@ -321,6 +409,7 @@ def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | R
                 "error": "Internal pipeline error.",
                 "diagnostic_id": diagnostic_id,
                 "error_type": error_type,
+                "reason": "unexpected_exception",
             },
         )
 
@@ -328,10 +417,15 @@ def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | R
     if result_status in {"ok", "insufficient_evidence", "conflict"}:
         return result
     if result_status == "error":
-        message, status_code, error_type = _safe_error_message(
+        message, status_code, error_type, reason = _safe_error_message(
             result.get("error", "Pipeline failed")
         )
-        content = {"status": "error", "error": message, "error_type": error_type}
+        content = {
+            "status": "error",
+            "error": message,
+            "error_type": error_type,
+            "reason": reason,
+        }
         if status_code == 500:
             diagnostic_id = uuid.uuid4().hex
             logger.error(
@@ -356,6 +450,7 @@ def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | R
             "status": "error",
             "error": "Internal pipeline error.",
             "error_type": "PipelineError",
+            "reason": "invalid_status",
             "diagnostic_id": diagnostic_id,
         },
     )
