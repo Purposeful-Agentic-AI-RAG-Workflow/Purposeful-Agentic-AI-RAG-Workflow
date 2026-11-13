@@ -15,6 +15,7 @@ from typing import Annotated, AsyncIterator
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from llm_client import LLMClientError, LLMConfig, call_model
@@ -148,6 +149,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")
 
 
 @app.get("/healthz")

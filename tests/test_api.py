@@ -36,6 +36,17 @@ def test_root_returns_html_page(client):
     assert "<title>Wananchi Actions</title>" in response.text
 
 
+def test_static_hero_and_credits_are_served(client):
+    hero = client.get("/static/img/hero.jpg")
+    credits = client.get("/static/img/CREDITS.md")
+
+    assert hero.status_code == 200
+    assert hero.headers["content-type"].startswith("image/jpeg")
+    assert hero.content.startswith(b"\xff\xd8")
+    assert credits.status_code == 200
+    assert "photograph" in credits.text
+
+
 def test_status_reports_missing_model_configuration_without_values(client, monkeypatch):
     for name in ("RAG_LLM_ENDPOINT", "RAG_LLM_MODEL", "RAG_LLM_API_KEY"):
         monkeypatch.delenv(name, raising=False)
