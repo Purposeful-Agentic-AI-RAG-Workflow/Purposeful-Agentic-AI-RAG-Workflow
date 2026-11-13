@@ -260,10 +260,21 @@ def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | R
                 else pipeline.run_pipeline(payload.query)
             )
     except Exception as error:
-        logger.error("Pipeline request failed (%s)", type(error).__name__)
+        diagnostic_id = uuid.uuid4().hex
+        error_type = type(error).__name__
+        logger.error(
+            "Pipeline request failed (diagnostic_id=%s, exception_type=%s)",
+            diagnostic_id,
+            error_type,
+        )
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "error": "Internal pipeline error; check server logs."},
+            content={
+                "status": "error",
+                "error": "Internal pipeline error.",
+                "diagnostic_id": diagnostic_id,
+                "error_type": error_type,
+            },
         )
 
     if result["status"] in {"ok", "insufficient_evidence", "conflict"}:

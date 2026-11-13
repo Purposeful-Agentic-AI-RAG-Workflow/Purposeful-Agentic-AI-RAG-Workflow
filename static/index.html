@@ -375,7 +375,10 @@
         }
 
         if (!response.ok || payload.status === "error") {
-          showError(payload.error || `The request failed (HTTP ${response.status}).`);
+          const diagnostic = payload.diagnostic_id
+            ? ` Diagnostic ID: ${payload.diagnostic_id}${payload.error_type ? ` (${payload.error_type})` : ""}.`
+            : "";
+          showError(`${payload.error || `The request failed (HTTP ${response.status}).`}${diagnostic}`);
           return;
         }
 

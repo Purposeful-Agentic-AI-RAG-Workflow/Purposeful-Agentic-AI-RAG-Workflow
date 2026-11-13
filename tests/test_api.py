@@ -174,6 +174,25 @@ def test_service_error_uses_502_with_structured_error(client, monkeypatch):
     }
 
 
+def test_unexpected_pipeline_error_returns_safe_diagnostic(client, monkeypatch):
+    secret = "sensitive-provider-response"
+
+    def fail_pipeline(_query, **_kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(api.pipeline, "run_pipeline", fail_pipeline)
+
+    response = client.post("/process", json={"query": "pothole on Mwangaza Road"})
+
+    assert response.status_code == 500
+    result = response.json()
+    assert result["status"] == "error"
+    assert result["error"] == "Internal pipeline error."
+    assert result["error_type"] == "RuntimeError"
+    assert len(result["diagnostic_id"]) == 32
+    assert secret not in response.text
+
+
 def test_model_error_response_redacts_upstream_body_and_secret(client, monkeypatch):
     ingest_documents([api.DATA_DIR / "feedback_batch_1.txt"])
     secret = "dummy-secret-never-return-this"
