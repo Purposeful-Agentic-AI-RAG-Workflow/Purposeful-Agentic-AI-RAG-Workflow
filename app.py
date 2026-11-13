@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import tempfile
 import threading
 import uuid
 from contextlib import asynccontextmanager
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
+FALLBACK_UPLOAD_DIR = Path(tempfile.gettempdir()) / "wananchi-actions" / "uploads"
 ALLOWED_SUFFIXES = {".txt", ".md"}
 MAX_UPLOAD_FILES = 10
 MAX_FILE_BYTES = 1_000_000
@@ -50,16 +52,32 @@ class ProcessRequest(BaseModel):
 
 
 def _data_files() -> list[Path]:
-    if not DATA_DIR.is_dir():
-        return []
-    return sorted(
-        (
-            path
-            for path in DATA_DIR.rglob("*")
-            if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
-        ),
-        key=lambda path: path.relative_to(DATA_DIR).as_posix().casefold(),
-    )
+    roots = [DATA_DIR]
+    if FALLBACK_UPLOAD_DIR != DATA_DIR / "uploads":
+        roots.append(FALLBACK_UPLOAD_DIR)
+    paths = {
+        path
+        for root in roots
+        if root.is_dir()
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
+    }
+    return sorted(paths, key=lambda path: str(path).casefold())
+
+
+def _upload_directory() -> Path:
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(dir=UPLOAD_DIR):
+            pass
+        return UPLOAD_DIR
+    except OSError as error:
+        logger.warning(
+            "Upload directory is not writable (%s); using temporary storage",
+            type(error).__name__,
+        )
+        FALLBACK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        return FALLBACK_UPLOAD_DIR
 
 
 def _model_configuration() -> tuple[bool, list[str], list[str]]:
@@ -177,10 +195,10 @@ async def ingest_uploads(
     staged_paths: list[Path] = []
     total_bytes = 0
     try:
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        upload_dir = _upload_directory()
         for upload in files:
             safe_name = _safe_upload_name(upload.filename)
-            destination = UPLOAD_DIR / f"{uuid.uuid4().hex}_{safe_name}"
+            destination = upload_dir / f"{uuid.uuid4().hex}_{safe_name}"
             total_bytes += await _write_upload(upload, destination)
             staged_paths.append(destination)
             if total_bytes > MAX_TOTAL_UPLOAD_BYTES:
@@ -211,7 +229,7 @@ async def ingest_uploads(
     }
 
 
-def _safe_error_message(message: object) -> tuple[str, int]:
+def _safe_error_message(message: object) -> tuple[str, int, str]:
     """Return a client-safe error message without upstream bodies or secret values."""
     text = str(message)
     lowered = text.casefold()
@@ -226,27 +244,55 @@ def _safe_error_message(message: object) -> tuple[str, int]:
             return (
                 f"Model configuration is missing required variables: {', '.join(variable_names)}",
                 502,
+                "LLMConfigurationError",
             )
-        return "Model configuration is incomplete; check server-side model settings.", 502
+        return (
+            "Model configuration is incomplete; check server-side model settings.",
+            502,
+            "LLMConfigurationError",
+        )
 
     if any(marker in lowered for marker in ("model request failed", "llm client", "model endpoint")):
         status_match = re.search(r"\bHTTP\s+(\d{3})\b", text, flags=re.IGNORECASE)
         if status_match:
             provider_status = int(status_match.group(1))
             return (
-                f"Model endpoint returned HTTP {provider_status}; verify the configured "
-                "endpoint, model, and API key.",
+                f"Model failure: endpoint returned HTTP {provider_status}; verify the "
+                "configured endpoint, model, and API key.",
                 502,
+                "LLMClientError",
             )
         return (
-            "Model request failed; verify the server-side endpoint, model, API key, "
+            "Model failure: verify the server-side endpoint, model, API key, "
             "and network configuration.",
             502,
+            "LLMClientError",
         )
 
     if any(marker in lowered for marker in ("ingestion failed", "retrieval failed")):
-        return "Retrieval failed; check the uploaded documents and server configuration.", 503
-    return "Internal pipeline error; check server logs.", 500
+        return (
+            "Retrieval failed; check the uploaded documents and server configuration.",
+            503,
+            "IngestionError",
+        )
+    if any(
+        marker in lowered
+        for marker in (
+            "response",
+            "action_items",
+            "citations",
+            "status must",
+            "status ok requires",
+            "no action items had citations",
+        )
+    ):
+        return (
+            "Model failure: the endpoint returned an invalid response; verify the "
+            "configured model and its OpenAI-compatible response format.",
+            502,
+            "LLMResponseError",
+        )
+    return "Internal pipeline error.", 500, "PipelineError"
 
 
 @app.post("/process", response_model=None)
@@ -262,10 +308,11 @@ def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | R
     except Exception as error:
         diagnostic_id = uuid.uuid4().hex
         error_type = type(error).__name__
-        logger.error(
+        logger.exception(
             "Pipeline request failed (diagnostic_id=%s, exception_type=%s)",
             diagnostic_id,
             error_type,
+            exc_info=(type(error), Exception(), error.__traceback__),
         )
         return JSONResponse(
             status_code=500,
@@ -277,15 +324,38 @@ def process_query(payload: ProcessRequest, request: Request) -> JSONResponse | R
             },
         )
 
-    if result["status"] in {"ok", "insufficient_evidence", "conflict"}:
+    result_status = result.get("status") if isinstance(result, dict) else None
+    if result_status in {"ok", "insufficient_evidence", "conflict"}:
         return result
-    if result["status"] == "error":
-        message, status_code = _safe_error_message(result.get("error", "Pipeline failed"))
+    if result_status == "error":
+        message, status_code, error_type = _safe_error_message(
+            result.get("error", "Pipeline failed")
+        )
+        content = {"status": "error", "error": message, "error_type": error_type}
+        if status_code == 500:
+            diagnostic_id = uuid.uuid4().hex
+            logger.error(
+                "Pipeline returned an internal error (diagnostic_id=%s, error_type=%s)",
+                diagnostic_id,
+                error_type,
+            )
+            content["diagnostic_id"] = diagnostic_id
         return JSONResponse(
             status_code=status_code,
-            content={"status": "error", "error": message},
+            content=content,
         )
+    diagnostic_id = uuid.uuid4().hex
+    logger.error(
+        "Pipeline returned an unknown status (diagnostic_id=%s, result_type=%s)",
+        diagnostic_id,
+        type(result).__name__,
+    )
     return JSONResponse(
         status_code=500,
-        content={"status": "error", "error": "Pipeline returned an unknown status"},
+        content={
+            "status": "error",
+            "error": "Internal pipeline error.",
+            "error_type": "PipelineError",
+            "diagnostic_id": diagnostic_id,
+        },
     )

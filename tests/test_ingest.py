@@ -23,6 +23,15 @@ def test_noisy_file_is_cleaned_and_original_is_untouched(tmp_path):
     assert source.read_text(encoding="utf-8") == original
 
 
+def test_default_data_directory_is_resolved_relative_to_ingest_file(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    chunks = ingest_directory()
+
+    assert chunks
+    assert any("Mwangaza Road" in chunk.text for chunk in chunks)
+
+
 def test_empty_file_reports_explicit_ingestion_failure(tmp_path):
     source = tmp_path / "empty.txt"
     source.write_text(" \n\t ", encoding="utf-8")
