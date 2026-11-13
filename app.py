@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, AsyncIterator
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 import pipeline
@@ -117,12 +117,8 @@ def status() -> dict[str, object]:
 
 
 @app.get("/")
-def root() -> dict[str, str]:
-    return {
-        "service": "wananchi-actions",
-        "status": "ok",
-        "health": "/healthz",
-    }
+def root() -> FileResponse:
+    return FileResponse(ROOT_DIR / "static" / "index.html", media_type="text/html")
 
 
 def _safe_upload_name(filename: str | None) -> str:
